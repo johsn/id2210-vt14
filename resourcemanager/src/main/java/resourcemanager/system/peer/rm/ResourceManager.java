@@ -6,13 +6,19 @@ import common.simulation.RequestResource;
 import cyclon.system.peer.cyclon.CyclonSample;
 import cyclon.system.peer.cyclon.CyclonSamplePort;
 import cyclon.system.peer.cyclon.PeerDescriptor;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+
+import javax.xml.ws.handler.HandlerResolver;
+
+import org.apache.commons.math.random.RandomGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,6 +29,7 @@ import se.sics.kompics.Positive;
 import se.sics.kompics.address.Address;
 import se.sics.kompics.network.Network;
 import se.sics.kompics.timer.SchedulePeriodicTimeout;
+import se.sics.kompics.timer.ScheduleTimeout;
 import se.sics.kompics.timer.Timer;
 import se.sics.kompics.web.Web;
 import system.peer.RmPort;
@@ -48,9 +55,8 @@ public final class ResourceManager extends ComponentDefinition {
     private RmConfiguration configuration;
     Random random;
     private AvailableResources availableResources;
-    // When you partition the index you need to find new nodes
-    // This is a routing table maintaining a list of pairs in each partition.
-    private Map<Integer, List<PeerDescriptor>> routingTable;
+    private static final int N_PROBES = 2; 
+    private ArrayList<IDCPUMem> currentlyRunning = new ArrayList<IDCPUMem>();
     Comparator<PeerDescriptor> peerAgeComparator = new Comparator<PeerDescriptor>() {
         @Override
         public int compare(PeerDescriptor t, PeerDescriptor t1) {
@@ -72,6 +78,8 @@ public final class ResourceManager extends ComponentDefinition {
         subscribe(handleResourceAllocationRequest, networkPort);
         subscribe(handleResourceAllocationResponse, networkPort);
         subscribe(handleTManSample, tmanPort);
+        subscribe(handleResourceAllocationConfirmation, networkPort);
+        subscribe(handleTimeout, timerPort);
     }
 	
     Handler<RmInit> handleInit = new Handler<RmInit>() {
@@ -79,7 +87,6 @@ public final class ResourceManager extends ComponentDefinition {
         public void handle(RmInit init) {
             self = init.getSelf();
             configuration = init.getConfiguration();
-            routingTable = new HashMap<Integer, List<PeerDescriptor>>(configuration.getNumPartitions());
             random = new Random(init.getConfiguration().getSeed());
             availableResources = init.getAvailableResources();
             long period = configuration.getPeriod();
@@ -109,17 +116,34 @@ public final class ResourceManager extends ComponentDefinition {
         }
     };
 
+    Handler<RequestResources.Confirmation> handleResourceAllocationConfirmation = new Handler<RequestResources.Confirmation>() {
+        @Override
+        public void handle(RequestResources.Confirmation event) {
+        	availableResources.allocate(event.getNumCpus(), event.getAmountMemInMb());
+        	currentlyRunning.add(new IDCPUMem(event.getNumCpus(), event.getAmountMemInMb(), event.getId()));
+        	startTimer(event.getTime(), event.getId());
+        }
+    };
 
     Handler<RequestResources.Request> handleResourceAllocationRequest = new Handler<RequestResources.Request>() {
         @Override
         public void handle(RequestResources.Request event) {
-            // TODO 
+            trigger(new RequestResources.Response(self, event.getSource(), 
+            		availableResources.isAvailable(event.getNumCpus(), event.getAmountMemInMb()), 
+            		event.getNumCpus(), event.getAmountMemInMb(), event.getTime(), event.getId()), networkPort);
         }
     };
+    
+    private ArrayList<Integer> waitingForIds = new ArrayList<Integer>();
+    
     Handler<RequestResources.Response> handleResourceAllocationResponse = new Handler<RequestResources.Response>() {
         @Override
         public void handle(RequestResources.Response event) {
-            // TODO 
+            if(waitingForIds.contains(event.getId()) && event.isSuccess()){ //TODO ändra om vi lägger till kö
+            	waitingForIds.remove((Integer)event.getId());
+            	trigger(new RequestResources.Confirmation(self, event.getSource(), 
+                		event.getNumCpus(), event.getAmountMemInMb(), event.getTime(), event.getId()), networkPort);
+            }
         }
     };
     Handler<CyclonSample> handleCyclonSample = new Handler<CyclonSample>() {
@@ -131,24 +155,6 @@ public final class ResourceManager extends ComponentDefinition {
             neighbours.clear();
             neighbours.addAll(event.getSample());
 
-            // update routing tables
-            for (Address p : neighbours) {
-                int partition = p.getId() % configuration.getNumPartitions();
-                List<PeerDescriptor> nodes = routingTable.get(partition);
-                if (nodes == null) {
-                    nodes = new ArrayList<PeerDescriptor>();
-                    routingTable.put(partition, nodes);
-                }
-                // Note - this might replace an existing entry in Lucene
-                nodes.add(new PeerDescriptor(p));
-                // keep the freshest descriptors in this partition
-                Collections.sort(nodes, peerAgeComparator);
-                List<PeerDescriptor> nodesToRemove = new ArrayList<PeerDescriptor>();
-                for (int i = nodes.size(); i > configuration.getMaxNumRoutingEntries(); i--) {
-                    nodesToRemove.add(nodes.get(i - 1));
-                }
-                nodes.removeAll(nodesToRemove);
-            }
         }
     };
 	
@@ -159,9 +165,20 @@ public final class ResourceManager extends ComponentDefinition {
             System.out.println("Allocate resources: " + event.getNumCpus() + " + " + event.getMemoryInMbs());
             // TODO: Ask for resources from neighbours
             // by sending a ResourceRequest
-//            RequestResources.Request req = new RequestResources.Request(self, dest,
-//            event.getNumCpus(), event.getAmountMem());
-//            trigger(req, networkPort);
+            int id = 0;
+            for(int i = 0; i < waitingForIds.size(); i++){
+            	id = Math.max(id, waitingForIds.get(i) + 1);
+            }
+            waitingForIds.add(id);
+            ArrayList<Address> rN = new ArrayList<Address>(neighbours);
+            for(int i = 0; i < neighbours.size() - N_PROBES; i++){
+            	rN.remove(random.nextInt(rN.size()));
+            }
+            for(Address dest : rN){
+	            RequestResources.Request req = new RequestResources.Request(self, dest,
+	            event.getNumCpus(), event.getMemoryInMbs(), event.getTimeToHoldResource(), id);
+	            trigger(req, networkPort);
+            }
         }
     };
     Handler<TManSample> handleTManSample = new Handler<TManSample>() {
@@ -170,5 +187,27 @@ public final class ResourceManager extends ComponentDefinition {
             // TODO: 
         }
     };
+    
+    private Handler<CheckTimeout> handleTimeout = new Handler<CheckTimeout>() {
+		@Override
+		public void handle(CheckTimeout event) {
+			for(IDCPUMem a : currentlyRunning){
+				if(a.getID() == event.getId()){
+					availableResources.release(a.getNumCPUs(), a.getMemoryInMbs());
+					System.out.println("-------------------------RELEASEEEEEEE!!!");
+					currentlyRunning.remove(a);
+					return;
+				}
+			}
+			System.out.println("-------------------------------- hittade ej");
+		}
+	};
+    
+	private void startTimer(long delay, int id) {
+		System.out.println("-------------------------------- start timer: " + delay);
+		ScheduleTimeout st = new ScheduleTimeout(delay);
+		st.setTimeoutEvent(new CheckTimeout(st, id));
+		trigger(st, timerPort);
+	}
 
 }

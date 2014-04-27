@@ -12,14 +12,21 @@ import se.sics.kompics.timer.Timeout;
 public class RequestResources  {
 
     public static class Request extends Message {
-
+    	private final int time;
         private final int numCpus;
         private final int amountMemInMb;
+        private final int id;
 
-        public Request(Address source, Address destination, int numCpus, int amountMemInMb) {
+        public Request(Address source, Address destination, int numCpus, int amountMemInMb, int time, int id) {
             super(source, destination);
             this.numCpus = numCpus;
             this.amountMemInMb = amountMemInMb;
+            this.time = time;
+            this.id = id;
+        }
+        
+        public int getTime(){
+        	return time;
         }
 
         public int getAmountMemInMb() {
@@ -29,16 +36,79 @@ public class RequestResources  {
         public int getNumCpus() {
             return numCpus;
         }
+        
+        public int getId() {
+        	return id;
+        }
 
     }
     
     public static class Response extends Message {
-
+    	private final int time;
+    	private final int numCpus;
+        private final int amountMemInMb;
         private final boolean success;
-        public Response(Address source, Address destination, boolean success) {
+        private final int id;
+        public Response(Address source, Address destination, boolean success, int numCpus, int amountMemInMB, int time, int id) {
             super(source, destination);
             this.success = success;
+            this.numCpus = numCpus;
+            this.amountMemInMb = amountMemInMB;
+            this.time = time;
+            this.id = id;
         }
+        
+        public int getTime(){
+        	return time;
+        }
+        
+        public boolean isSuccess(){
+        	return success;
+        }
+        
+        public int getAmountMemInMb() {
+            return amountMemInMb;
+        }
+
+        public int getNumCpus() {
+            return numCpus;
+        }
+        
+        public int getId() {
+        	return id;
+        }
+    }
+    
+    public static class Confirmation extends Message {
+    	private final int time;
+        private final int numCpus;
+        private final int amountMemInMb;
+        private final int id;
+
+        public Confirmation(Address source, Address destination, int numCpus, int amountMemInMb, int time, int id) {
+            super(source, destination);
+            this.numCpus = numCpus;
+            this.amountMemInMb = amountMemInMb;
+            this.time = time;
+            this.id = id;
+        }
+        
+        public int getTime(){
+        	return time;
+        }
+
+        public int getAmountMemInMb() {
+            return amountMemInMb;
+        }
+
+        public int getNumCpus() {
+            return numCpus;
+        }
+        
+        public int getId() {
+        	return id;
+        }
+
     }
     
     public static class RequestTimeout extends Timeout {
