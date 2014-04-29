@@ -50,13 +50,17 @@ public final class ResourceManager extends ComponentDefinition {
     Negative<Web> webPort = negative(Web.class);
     Positive<CyclonSamplePort> cyclonSamplePort = positive(CyclonSamplePort.class);
     Positive<TManSamplePort> tmanPort = positive(TManSamplePort.class);
-    ArrayList<Address> neighbours = new ArrayList<Address>();
+    ArrayList<Address> neighbors = new ArrayList<Address>();
     private Address self;
     private RmConfiguration configuration;
     Random random;
     private AvailableResources availableResources;
-    private static final int N_PROBES = 2; 
-    private ArrayList<IDCPUMem> currentlyRunning = new ArrayList<IDCPUMem>();
+    private static final int PROBES = 10; 
+    
+    private ArrayList<TaskInformation> UnScheduledTasks = new ArrayList<TaskInformation>();
+    private ArrayList<TaskInformation> RunningTasks = new ArrayList<TaskInformation>();
+    private ArrayList<TaskInformation> queue = new ArrayList<TaskInformation>();
+    
     Comparator<PeerDescriptor> peerAgeComparator = new Comparator<PeerDescriptor>() {
         @Override
         public int compare(PeerDescriptor t, PeerDescriptor t1) {
@@ -107,10 +111,10 @@ public final class ResourceManager extends ComponentDefinition {
             // pick a random neighbour to ask for index updates from. 
             // You can change this policy if you want to.
             // Maybe a gradient neighbour who is closer to the leader?
-            if (neighbours.isEmpty()) {
+            if (neighbors.isEmpty()) {
                 return;
             }
-            Address dest = neighbours.get(random.nextInt(neighbours.size()));
+            Address dest = neighbors.get(random.nextInt(neighbors.size()));
 
 
         }
@@ -119,9 +123,21 @@ public final class ResourceManager extends ComponentDefinition {
     Handler<RequestResources.Confirmation> handleResourceAllocationConfirmation = new Handler<RequestResources.Confirmation>() {
         @Override
         public void handle(RequestResources.Confirmation event) {
-        	availableResources.allocate(event.getNumCpus(), event.getAmountMemInMb());
-        	currentlyRunning.add(new IDCPUMem(event.getNumCpus(), event.getAmountMemInMb(), event.getId()));
-        	startTimer(event.getTime(), event.getId());
+            
+            
+                if(availableResources.isAvailable(event.getNumCpus(), event.getAmountMemInMb()))
+                {
+                    availableResources.allocate(event.getNumCpus(), event.getAmountMemInMb());
+                    RunningTasks.add(new TaskInformation(event.getNumCpus(), event.getAmountMemInMb(), event.getId(),event.getTime()));
+                    startTimer(event.getTime(), event.getId());
+                }
+                else
+                {
+                    synchronized(queue)
+                    {
+                        queue.add(new TaskInformation(event.getNumCpus(),event.getAmountMemInMb(),event.getId(),event.getTime()));
+                    }
+                }
         }
     };
 
@@ -130,19 +146,57 @@ public final class ResourceManager extends ComponentDefinition {
         public void handle(RequestResources.Request event) {
             trigger(new RequestResources.Response(self, event.getSource(), 
             		availableResources.isAvailable(event.getNumCpus(), event.getAmountMemInMb()), 
-            		event.getNumCpus(), event.getAmountMemInMb(), event.getTime(), event.getId()), networkPort);
+            		event.getNumCpus(), event.getAmountMemInMb(), event.getTime(), event.getId(),queue.size()), networkPort);
         }
     };
     
-    private ArrayList<Integer> waitingForIds = new ArrayList<Integer>();
+    
     
     Handler<RequestResources.Response> handleResourceAllocationResponse = new Handler<RequestResources.Response>() {
         @Override
-        public void handle(RequestResources.Response event) {
-            if(waitingForIds.contains(event.getId()) && event.isSuccess()){ //TODO ändra om vi lägger till kö
-            	waitingForIds.remove((Integer)event.getId());
-            	trigger(new RequestResources.Confirmation(self, event.getSource(), 
-                		event.getNumCpus(), event.getAmountMemInMb(), event.getTime(), event.getId()), networkPort);
+        public void handle(RequestResources.Response event)
+        {
+            synchronized(UnScheduledTasks)
+            {
+                for(TaskInformation task : UnScheduledTasks)
+                {
+                    if(task.getId()==event.getId())
+                    {
+                        if(event.isSuccess())
+                        {
+                            UnScheduledTasks.remove(task);
+                            trigger(new RequestResources.Confirmation(self, event.getSource(), event.getNumCpus(), event.getAmountMemInMb(), event.getTime(), event.getId()),networkPort);
+                        }
+                        else
+                        {
+                            task.getQueue_sizes().add(new NodeAddressAndQueueInfo(event.getQueueSize(),event.getSource()));
+                            if(task.getQueue_sizes().size()==PROBES)
+                            {
+                                int shortestQueue = Integer.MAX_VALUE;
+                                for(NodeAddressAndQueueInfo info : task.getQueue_sizes())
+                                {
+                                    if(info.getQueue()<shortestQueue)
+                                    {
+                                        shortestQueue=info.getQueue();
+                                    }
+                                }
+                                for(NodeAddressAndQueueInfo node : task.getQueue_sizes())
+                                {
+                                    if(node.getQueue()==shortestQueue)
+                                    {
+                                        UnScheduledTasks.remove(task);
+                                        trigger(new RequestResources.Confirmation(self, node.getSource(), event.getNumCpus(), event.getAmountMemInMb(), event.getTime(), event.getId()),networkPort);
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                }
             }
         }
     };
@@ -150,10 +204,10 @@ public final class ResourceManager extends ComponentDefinition {
         @Override
         public void handle(CyclonSample event) {
             System.out.println("Received samples: " + event.getSample().size());
-            
+            System.out.println("Node [" + self.getIp().getHostAddress() + "] " + "has Queue size -> ["+queue.size()+"]");
             // receive a new list of neighbours
-            neighbours.clear();
-            neighbours.addAll(event.getSample());
+            neighbors.clear();
+            neighbors.addAll(event.getSample());
 
         }
     };
@@ -166,18 +220,29 @@ public final class ResourceManager extends ComponentDefinition {
             // TODO: Ask for resources from neighbours
             // by sending a ResourceRequest
             int id = 0;
-            for(int i = 0; i < waitingForIds.size(); i++){
-            	id = Math.max(id, waitingForIds.get(i) + 1);
-            }
-            waitingForIds.add(id);
-            ArrayList<Address> rN = new ArrayList<Address>(neighbours);
-            for(int i = 0; i < neighbours.size() - N_PROBES; i++){
+            synchronized(UnScheduledTasks)
+            {
+                for(int i = 0; i < UnScheduledTasks.size(); i++)
+                {
+                    id = Math.max(id, UnScheduledTasks.get(i).getId() + 1);
+                }
+                UnScheduledTasks.add(new TaskInformation(event.getNumCpus(),event.getMemoryInMbs(),id,event.getTimeToHoldResource()));
+            }    
+            ArrayList<Address> rN = new ArrayList<Address>(neighbors);
+            for(int i = 0; i < neighbors.size() - PROBES; i++){
             	rN.remove(random.nextInt(rN.size()));
             }
-            for(Address dest : rN){
-	            RequestResources.Request req = new RequestResources.Request(self, dest,
-	            event.getNumCpus(), event.getMemoryInMbs(), event.getTimeToHoldResource(), id);
-	            trigger(req, networkPort);
+            for(Address dest : rN)
+            {
+                    synchronized(UnScheduledTasks)
+                    {
+                        for(TaskInformation task : UnScheduledTasks)
+                        {
+                            RequestResources.Request req = new RequestResources.Request(self, dest,
+                            task.getNumCpus(), task.getMemoryInMbs(), task.getTime(), task.getId());
+                            trigger(req, networkPort);
+                        }
+                    }
             }
         }
     };
@@ -191,20 +256,39 @@ public final class ResourceManager extends ComponentDefinition {
     private Handler<CheckTimeout> handleTimeout = new Handler<CheckTimeout>() {
 		@Override
 		public void handle(CheckTimeout event) {
-			for(IDCPUMem a : currentlyRunning){
-				if(a.getID() == event.getId()){
-					availableResources.release(a.getNumCPUs(), a.getMemoryInMbs());
-					System.out.println("-------------------------RELEASEEEEEEE!!!");
-					currentlyRunning.remove(a);
-					return;
+			for(TaskInformation a : RunningTasks)
+                        {
+				if(a.getId() == event.getId())
+                                {
+					availableResources.release(a.getNumCpus(), a.getMemoryInMbs());
+					System.out.println("["+self.getIp().getHostAddress()+"]" + " Released"+ "["+a.getNumCpus()+"]" + "["+a.getMemoryInMbs()+"]");
+					RunningTasks.remove(a);
 				}
+                                else
+                                {
+                                    System.out.println("-------------------------------- hittade ej");
+                                }
+                                synchronized(queue)
+                                {
+                                    if(queue.size()>0)
+                                    {
+                                        if(availableResources.isAvailable(queue.get(0).getNumCpus(), queue.get(0).getMemoryInMbs()))
+                                        {
+                                            availableResources.allocate(queue.get(0).getNumCpus(), queue.get(0).getMemoryInMbs());
+                                            RunningTasks.add(queue.get(0));
+                                            startTimer(queue.get(0).getTime(),queue.get(0).getId());
+                                            queue.remove(queue.get(0));
+                                            break;
+                                        }
+                                    }
+                                    break;
+                                }
 			}
-			System.out.println("-------------------------------- hittade ej");
+			
 		}
 	};
     
 	private void startTimer(long delay, int id) {
-		System.out.println("-------------------------------- start timer: " + delay);
 		ScheduleTimeout st = new ScheduleTimeout(delay);
 		st.setTimeoutEvent(new CheckTimeout(st, id));
 		trigger(st, timerPort);

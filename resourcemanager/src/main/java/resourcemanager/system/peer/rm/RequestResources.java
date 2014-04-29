@@ -49,13 +49,23 @@ public class RequestResources  {
         private final int amountMemInMb;
         private final boolean success;
         private final int id;
-        public Response(Address source, Address destination, boolean success, int numCpus, int amountMemInMB, int time, int id) {
+        private int QueueSize;
+
+        public int getQueueSize() {
+            return QueueSize;
+        }
+
+        public void setQueueSize(int QueueSize) {
+            this.QueueSize = QueueSize;
+        }
+        public Response(Address source, Address destination, boolean success, int numCpus, int amountMemInMB, int time, int id, int qsize) {
             super(source, destination);
             this.success = success;
             this.numCpus = numCpus;
             this.amountMemInMb = amountMemInMB;
             this.time = time;
             this.id = id;
+            this.QueueSize=qsize;
         }
         
         public int getTime(){
