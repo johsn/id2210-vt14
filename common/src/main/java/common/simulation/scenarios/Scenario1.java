@@ -23,6 +23,16 @@ public class Scenario1 extends Scenario {
                                 );
 		}};
                 
+                StochasticProcess batchprocess = new StochasticProcess() {{
+			eventInterArrivalTime(constant(100));
+			raise(10, Operations.requestbatch(), 
+                                uniform(0, Integer.MAX_VALUE),
+                                constant(1), // 1 machine
+                                constant(2), constant(2000),
+                                constant(1000*60*1) // 1 minute
+                                );
+		}};
+                
                 // TODO - not used yet
 		StochasticProcess failPeersProcess = new StochasticProcess() {{
 			eventInterArrivalTime(constant(100));
@@ -36,6 +46,7 @@ public class Scenario1 extends Scenario {
 		}};
 		process0.start();
 		process1.startAfterTerminationOf(2000, process0);
+                batchprocess.startAfterTerminationOf(2000, process0);
                 terminateProcess.startAfterTerminationOf(100*1000, process1);
 	}};
 

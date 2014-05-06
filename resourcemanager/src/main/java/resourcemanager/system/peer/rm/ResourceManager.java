@@ -2,6 +2,7 @@ package resourcemanager.system.peer.rm;
 
 import common.configuration.RmConfiguration;
 import common.peer.AvailableResources;
+import common.simulation.BatchJob;
 import common.simulation.RequestResource;
 import cyclon.system.peer.cyclon.CyclonSample;
 import cyclon.system.peer.cyclon.CyclonSamplePort;
@@ -78,12 +79,14 @@ public final class ResourceManager extends ComponentDefinition {
         subscribe(handleInit, control);
         subscribe(handleCyclonSample, cyclonSamplePort);
         subscribe(handleRequestResource, indexPort);
+        subscribe(handleBatchJob,indexPort);
         subscribe(handleUpdateTimeout, timerPort);
         subscribe(handleResourceAllocationRequest, networkPort);
         subscribe(handleResourceAllocationResponse, networkPort);
         subscribe(handleTManSample, tmanPort);
         subscribe(handleResourceAllocationConfirmation, networkPort);
         subscribe(handleTimeout, timerPort);
+        
     }
 	
     Handler<RmInit> handleInit = new Handler<RmInit>() {
@@ -244,6 +247,18 @@ public final class ResourceManager extends ComponentDefinition {
                         }
                     }
             }
+        }
+    };
+    
+     Handler<BatchJob> handleBatchJob = new Handler<BatchJob>() {
+        @Override
+        public void handle(BatchJob event)
+        {
+            int requested_machines = event.getMachines();
+            int requested_cpus = event.getNumCpus();
+            int requested_mem = event.getMemoryInMbs();
+            
+            System.out.println("Start BatchJob for machines: " + requested_machines + "cpus: "+ requested_cpus + "memory: "+ requested_mem);
         }
     };
     Handler<TManSample> handleTManSample = new Handler<TManSample>() {
