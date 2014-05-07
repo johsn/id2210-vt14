@@ -49,12 +49,12 @@ public class Operations {
         };
     }
     
-    public static Operation5<BatchJob, Long, Long, Long, Long, Long> requestbatch() {
+    public static Operation5<BatchJob, Long, Long, Long, Long, Long> requestBatch() {
         return new Operation5<BatchJob, Long, Long, Long, Long,Long>() {
             @Override
-            public BatchJob generate(Long machines,Long id, Long numCpus, Long memInMbs,
+            public BatchJob generate(Long id,Long machines, Long numCpus, Long memInMbs,
                     Long timeToHoldResourceInMilliSecs) {
-                return new BatchJob(machines.intValue(),id, numCpus.intValue(),
+                return new BatchJob(id,machines.intValue(), numCpus.intValue(),
                         memInMbs.intValue(),
                         timeToHoldResourceInMilliSecs.intValue());
             }

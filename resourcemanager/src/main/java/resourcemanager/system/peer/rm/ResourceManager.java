@@ -79,7 +79,7 @@ public final class ResourceManager extends ComponentDefinition {
         subscribe(handleInit, control);
         subscribe(handleCyclonSample, cyclonSamplePort);
         subscribe(handleRequestResource, indexPort);
-        subscribe(handleBatchJob,indexPort);
+        subscribe(handleBatchJob, indexPort);
         subscribe(handleUpdateTimeout, timerPort);
         subscribe(handleResourceAllocationRequest, networkPort);
         subscribe(handleResourceAllocationResponse, networkPort);
@@ -259,6 +259,14 @@ public final class ResourceManager extends ComponentDefinition {
             int requested_mem = event.getMemoryInMbs();
             
             System.out.println("Start BatchJob for machines: " + requested_machines + "cpus: "+ requested_cpus + "memory: "+ requested_mem);
+            
+            for(int i=0; i< requested_machines;i++)
+            {
+                RequestResource r = new RequestResource(self.getId(),event.getNumCpus(),event.getMemoryInMbs(),event.getTimeToHoldResource());
+                handleRequestResource.handle(r);
+            }
+            
+            
         }
     };
     Handler<TManSample> handleTManSample = new Handler<TManSample>() {

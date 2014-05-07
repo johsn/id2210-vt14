@@ -25,9 +25,9 @@ public class Scenario1 extends Scenario {
                 
                 StochasticProcess batchprocess = new StochasticProcess() {{
 			eventInterArrivalTime(constant(100));
-			raise(10, Operations.requestbatch(), 
+			raise(30, Operations.requestBatch(), 
                                 uniform(0, Integer.MAX_VALUE),
-                                constant(1), // 1 machine
+                                constant(3), // 3 machines
                                 constant(2), constant(2000),
                                 constant(1000*60*1) // 1 minute
                                 );
@@ -45,9 +45,9 @@ public class Scenario1 extends Scenario {
 			raise(1, Operations.terminate);
 		}};
 		process0.start();
-		process1.startAfterTerminationOf(2000, process0);
+		//process1.startAfterTerminationOf(2000, process0);
                 batchprocess.startAfterTerminationOf(2000, process0);
-                terminateProcess.startAfterTerminationOf(100*1000, process1);
+                terminateProcess.startAfterTerminationOf(100*1000, batchprocess);
 	}};
 
 	// -------------------------------------------------------------------

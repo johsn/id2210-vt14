@@ -10,7 +10,7 @@ public final class BatchJob extends Event {
     private final int timeToHoldResource;
     private final int machines;
 
-    public BatchJob(int machines,long id, int numCpus, int memoryInMbs, int timeToHoldResource) {
+    public BatchJob(long id,int machines, int numCpus, int memoryInMbs, int timeToHoldResource) {
         this.machines=machines;
         this.id = id;
         this.numCpus = numCpus;
