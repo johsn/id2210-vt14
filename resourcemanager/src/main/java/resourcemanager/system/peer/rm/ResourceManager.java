@@ -55,7 +55,7 @@ public final class ResourceManager extends ComponentDefinition {
     private Map<Integer, List<PeerDescriptor>> routingTable;
 
     private static final int PROBES = 10;
-    private static final int MAX_RESPONSE_TIMEOUT = 10000;
+    private static final int MAX_RESPONSE_TIMEOUT = 2000;
     private int _current_task_id = 0;
     private final Object _lock_task_id = new Object();
     private final Object _lock_responses = new Object();
@@ -148,6 +148,7 @@ public final class ResourceManager extends ComponentDefinition {
                         if(t.getId() == _scheduler_task_id && t.getScheduler().equals(_scheduler))
                         {
                             _task_to_look_for = t;
+                            break;
                         }
                     }
                 }
