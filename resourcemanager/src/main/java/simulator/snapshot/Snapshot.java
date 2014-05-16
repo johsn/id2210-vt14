@@ -23,7 +23,9 @@ public class Snapshot {
     }
 
 
-    public static void removePeer(Address address) {
+    public static void removePeer(Address address) 
+    {
+        System.out.println("€€€€€€€€€€€€€€€€€€€€€€€ PEER "+ address.getIp().getHostAddress()+" DIED €€€€€€€€€€€€€€€€€€€€€€€€€€€€€€");
         peers.remove(address);
     }
 
@@ -63,22 +65,22 @@ public class Snapshot {
 
     private static String reportDetails() {
         String str = "---\n";
-        int minFreeCpus = 0;
-        int maxFreeCpus = Integer.MAX_VALUE;
-        int minFreeMemInMb = 0;
-        int maxFreeMemInMb = Integer.MAX_VALUE;
+        int minFreeCpus = Integer.MAX_VALUE;
+        int maxFreeCpus = 0;
+        int minFreeMemInMb = Integer.MAX_VALUE;
+        int maxFreeMemInMb = 0;
         for (PeerInfo p : peers.values()) {
-            if (p.getNumFreeCpus() < maxFreeCpus) {
-                maxFreeCpus = p.getNumFreeCpus();
-            }
-            if (p.getNumFreeCpus() > minFreeCpus) {
+            if (p.getNumFreeCpus() < minFreeCpus) {
                 minFreeCpus = p.getNumFreeCpus();
             }
-            if (p.getFreeMemInMbs() < maxFreeMemInMb) {
-                maxFreeMemInMb = p.getFreeMemInMbs();
+            if (p.getNumFreeCpus() > maxFreeCpus) {
+                maxFreeCpus = p.getNumFreeCpus();
             }
-            if (p.getFreeMemInMbs() > minFreeMemInMb) {
+            if (p.getFreeMemInMbs() < minFreeMemInMb) {
                 minFreeMemInMb = p.getFreeMemInMbs();
+            }
+            if (p.getFreeMemInMbs() > maxFreeMemInMb) {
+                maxFreeMemInMb = p.getFreeMemInMbs();
             }
         }
         str += "Peer with max num of free cpus: " + maxFreeCpus + "\n";
