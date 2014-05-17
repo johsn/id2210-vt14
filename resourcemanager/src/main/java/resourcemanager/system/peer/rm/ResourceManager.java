@@ -2,6 +2,7 @@ package resourcemanager.system.peer.rm;
 
 import common.configuration.RmConfiguration;
 import common.peer.AvailableResources;
+import common.simulation.BatchRequest;
 import common.simulation.RequestResource;
 import cyclon.system.peer.cyclon.CyclonSample;
 import cyclon.system.peer.cyclon.CyclonSamplePort;
@@ -89,6 +90,7 @@ public final class ResourceManager extends ComponentDefinition {
         subscribe(handleInit, control);
         subscribe(handleCyclonSample, cyclonSamplePort);
         subscribe(handleRequestResource, indexPort);
+        subscribe(handleBatchRequest,indexPort);
         subscribe(handleUpdateTimeout, timerPort);
         subscribe(handleTaskTimeOut, timerPort);
         subscribe(handlePongTimeOut, timerPort);
@@ -451,6 +453,26 @@ public final class ResourceManager extends ComponentDefinition {
                 }
         }
     };
+    
+    Handler<BatchRequest> handleBatchRequest = new Handler<BatchRequest>() {
+        @Override
+        @SuppressWarnings("SynchronizeOnNonFinalField")
+        public void handle(BatchRequest event) {
+
+            int _requested_machines = event.getMachines();
+            int _requested_cpu = event.getNumCpus();
+            int _requested_mem = event.getMemoryInMbs();
+            
+            System.out.println("ResourceManager " + self.getIp().getHostAddress() + " wants to schedule " + _requested_machines + " tasks, each with CPU["+_requested_cpu+"] and MEM["+_requested_mem+"]");
+            
+            for(int i = 0; i < _requested_machines;i++)
+            {
+                RequestResource r = new RequestResource(self.getId(),_requested_cpu,_requested_mem,event.getTimeToHoldResource());
+                handleRequestResource.handle(r);
+            }
+        }
+    };
+    
     Handler<TManSample> handleTManSample = new Handler<TManSample>() {
         @Override
         public void handle(TManSample event) {

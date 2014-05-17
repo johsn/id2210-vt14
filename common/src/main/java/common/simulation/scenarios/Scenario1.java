@@ -14,10 +14,20 @@ public class Scenario1 extends Scenario {
                              );
 		}};
                 
-		StochasticProcess process1 = new StochasticProcess() {{
+		StochasticProcess _regular_request = new StochasticProcess() {{
 			eventInterArrivalTime(constant(100));
 			raise(100,Operations.requestResources(), 
                                 uniform(0, Integer.MAX_VALUE),
+                                constant(2), constant(2000),
+                                constant(1000*60*1) // 1 minute
+                                );
+		}};
+                
+                StochasticProcess _batch_request = new StochasticProcess() {{
+			eventInterArrivalTime(constant(100));
+			raise(10,Operations.requestBatch(), 
+                                uniform(0, Integer.MAX_VALUE),
+                                constant(3),
                                 constant(2), constant(2000),
                                 constant(1000*60*1) // 1 minute
                                 );
@@ -35,9 +45,10 @@ public class Scenario1 extends Scenario {
 			raise(1, Operations.terminate);
 		}};
 		process0.start();
-		process1.startAfterTerminationOf(2000, process0);
+		//_regular_request.startAfterTerminationOf(2000, process0);
+                _batch_request.startAfterTerminationOf(2000, process0);
                 failPeersProcess.startAfterStartOf(30000, process0);
-                terminateProcess.startAfterTerminationOf(100*1000, process1);
+                terminateProcess.startAfterTerminationOf(100*1000, _batch_request);
 	}};
 
 	// -------------------------------------------------------------------
