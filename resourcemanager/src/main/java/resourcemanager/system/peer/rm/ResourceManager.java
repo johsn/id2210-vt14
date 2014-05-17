@@ -116,7 +116,7 @@ public final class ResourceManager extends ComponentDefinition {
 
         }
     };
-
+    
     Handler<RequestResources.Ping> handlePing = new Handler<RequestResources.Ping>() {
         @Override
         @SuppressWarnings("SynchronizeOnNonFinalField")
@@ -164,6 +164,7 @@ public final class ResourceManager extends ComponentDefinition {
 
         }
 
+   
     };
 
     Handler<RequestResources.Pong> handlePong = new Handler<RequestResources.Pong>() {
@@ -247,7 +248,7 @@ public final class ResourceManager extends ComponentDefinition {
             if (_task_to_stop != null) {
                 availableResources.release(_task_to_stop.getCpus(), _task_to_stop.getMemory());
                 _tasks_runnning_on_this_machine.remove(_task_to_stop);
-                System.out.println(" ");
+                            System.out.println(" ");
                             System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
                             System.out.println("Peer "+ self.getIp().getHostAddress()+" finished a task and released CPU:"+ _task_to_stop.getCpus()+" and MEM:"+_task_to_stop.getMemory());
                             System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
@@ -288,6 +289,7 @@ public final class ResourceManager extends ComponentDefinition {
                                 t.setPonged(false);
                                 RequestResources.Ping p = new RequestResources.Ping(self, t.getPotentialExecutor(), t.getId());
                                 trigger(p, networkPort);
+                                StartTimerForPongResponse(MAX_RESPONSE_TIMEOUT,t.getId());
                                 break;
                             } else {
                                 _non_idle_tasks.remove(t);
@@ -296,25 +298,13 @@ public final class ResourceManager extends ComponentDefinition {
                         } else {
                             System.out.println(" ");
                             System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
-                            System.out.println("Peer "+ t.getPotentialExecutor().getIp().getHostAddress()+" hasn't ponged and is therefore presumed dead");
+                            System.out.println("Task with id ["+t.getId()+"] that was scheduled on peer [" + t.getPotentialExecutor().getIp().getHostAddress()+"] hasn't been ponged and is therefore rescheduled on another host");
                             System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
                             System.out.println(" ");
                             _non_idle_tasks.remove(t);
+                            t.setResponses(0);
+                            t.setShortest_queue(Integer.MAX_VALUE);
                             _idle_tasks.add(t);
-                            Address _executor = t.getPotentialExecutor();
-                            synchronized(_non_idle_tasks)
-                            {
-                                Iterator j = _non_idle_tasks.iterator();
-                                while(j.hasNext())
-                                {
-                                    Task task = (Task)j.next();
-                                    if(task.getPotentialExecutor().equals(_executor))
-                                    {
-                                        _non_idle_tasks.remove(task);
-                                        _idle_tasks.add(task);
-                                    }
-                                }
-                            }
                             break;
                         }
                     }
@@ -448,19 +438,17 @@ public final class ResourceManager extends ComponentDefinition {
             }
             
             _idle_tasks.add(_task);
-
-            for (Address peer : _peers_to_probe) {
-                synchronized (_idle_tasks) {
-                    Iterator i = _idle_tasks.iterator();
-                    while (i.hasNext()) {
-                        Task t = (Task) i.next();
-                        t.setExpected_responses(_peers_to_probe.size());
-                        RequestResources.Request r = new RequestResources.Request(self, peer, t.getCpus(), t.getMemory(), t.getId());
-                        trigger(r, networkPort);
+                for (Address peer : _peers_to_probe) {
+                    synchronized (_idle_tasks) {
+                        Iterator i = _idle_tasks.iterator();
+                        while (i.hasNext()) {
+                            Task t = (Task) i.next();
+                            t.setExpected_responses(_peers_to_probe.size());
+                            RequestResources.Request r = new RequestResources.Request(self, peer, t.getCpus(), t.getMemory(), t.getId());
+                            trigger(r, networkPort);
+                        }
                     }
                 }
-            }
-
         }
     };
     Handler<TManSample> handleTManSample = new Handler<TManSample>() {
