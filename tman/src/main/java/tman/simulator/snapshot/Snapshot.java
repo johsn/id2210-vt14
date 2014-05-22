@@ -30,9 +30,13 @@ public class Snapshot {
 		PeerInfo peerInfo = peers.get(address);
 		
 		if (peerInfo == null)
+                {
 			return;
-		
-		peerInfo.updateTManPartners(partners);
+                }
+                else
+                {
+                    peerInfo.updateTManPartners(partners);
+                }
 	}
 	
 

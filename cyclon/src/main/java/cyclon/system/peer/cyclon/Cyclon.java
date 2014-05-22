@@ -1,5 +1,4 @@
 package cyclon.system.peer.cyclon;
-
 import common.configuration.CyclonConfiguration;
 import common.peer.AvailableResources;
 import java.util.ArrayList;
@@ -102,8 +101,10 @@ public final class Cyclon extends ComponentDefinition {
 	private void initiateShuffle(int shuffleSize, Address randomPeer) {
 		// send the random view to a random peer
 		ArrayList<PeerDescriptor> randomDescriptors = cache.selectToSendAtActive(shuffleSize - 1, randomPeer);
-		randomDescriptors.add(new PeerDescriptor(self));
-		DescriptorBuffer randomBuffer = new DescriptorBuffer(self, randomDescriptors);
+                PeerDescriptor _self = new PeerDescriptor(self);
+                _self.setAvailableResources(availableResources);
+		randomDescriptors.add(_self);
+		DescriptorBuffer randomBuffer = new DescriptorBuffer(_self, randomDescriptors);
 		
 		ScheduleTimeout rst = new ScheduleTimeout(shuffleTimeout);
 		rst.setTimeoutEvent(new ShuffleTimeout(rst, randomPeer));
@@ -137,9 +138,11 @@ public final class Cyclon extends ComponentDefinition {
 	
 	Handler<ShuffleRequest> handleShuffleRequest = new Handler<ShuffleRequest>() {
 		public void handle(ShuffleRequest event) {
-			Address peer = event.getRandomBuffer().getFrom();
+			Address peer = event.getRandomBuffer().getFrom().getAddress();
 			DescriptorBuffer receivedRandomBuffer = event.getRandomBuffer();
-			DescriptorBuffer toSendRandomBuffer = new DescriptorBuffer(self, cache.selectToSendAtPassive(receivedRandomBuffer.getSize(), peer));
+                        PeerDescriptor _self = new PeerDescriptor(self);
+                        _self.setAvailableResources(availableResources);
+			DescriptorBuffer toSendRandomBuffer = new DescriptorBuffer(_self, cache.selectToSendAtPassive(receivedRandomBuffer.getSize(), peer));
 			cache.selectToKeep(peer, receivedRandomBuffer.getDescriptors());
 			ShuffleResponse response = new ShuffleResponse(event.getRequestId(), 
                                 toSendRandomBuffer, self, peer);
@@ -191,12 +194,9 @@ public final class Cyclon extends ComponentDefinition {
 	};
 	
 
-	private ArrayList<Address> getPartners() {
-		ArrayList<PeerDescriptor> partnersDescriptors = cache.getAll();
-		ArrayList<Address> partners = new ArrayList<Address>();
-		for (PeerDescriptor desc : partnersDescriptors)
-			partners.add(desc.getAddress());
+	private ArrayList<PeerDescriptor> getPartners() {
 		
-		return partners;
+		
+		return cache.getAll();
 	}
 }

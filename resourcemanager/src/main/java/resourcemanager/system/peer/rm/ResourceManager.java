@@ -47,6 +47,8 @@ public final class ResourceManager extends ComponentDefinition {
     Positive<CyclonSamplePort> cyclonSamplePort = positive(CyclonSamplePort.class);
     Positive<TManSamplePort> tmanPort = positive(TManSamplePort.class);
     ArrayList<Address> neighbours = new ArrayList<Address>();
+    ArrayList<PeerDescriptor> _tmanCpu = new ArrayList<PeerDescriptor>();
+    ArrayList<PeerDescriptor> _tmanMem = new ArrayList<PeerDescriptor>();
     private Address self;
     private RmConfiguration configuration;
     Random random;
@@ -60,6 +62,7 @@ public final class ResourceManager extends ComponentDefinition {
     private int _current_task_id = 0;
     private final Object _lock_task_id = new Object();
     private final Object _lock_responses = new Object();
+    private final boolean _gradient = false;
 
     private List<Task> _idle_tasks = Collections.synchronizedList(new ArrayList());
     private List<Task> _non_idle_tasks = Collections.synchronizedList(new ArrayList());
@@ -94,12 +97,14 @@ public final class ResourceManager extends ComponentDefinition {
         subscribe(handleUpdateTimeout, timerPort);
         subscribe(handleTaskTimeOut, timerPort);
         subscribe(handlePongTimeOut, timerPort);
+        subscribe(handleRequestTimeOut,timerPort);
         subscribe(handleResourceAllocationRequest, networkPort);
         subscribe(handleResourceAllocationResponse, networkPort);
         subscribe(handlePing, networkPort);
         subscribe(handlePong, networkPort);
         subscribe(handleConfirm, networkPort);
-        subscribe(handleTManSample, tmanPort);
+        subscribe(handleTManSampleCpu, tmanPort);
+        subscribe(handleTManSampleMem, tmanPort);
     }
 
     Handler<RmInit> handleInit = new Handler<RmInit>() {
@@ -228,7 +233,7 @@ public final class ResourceManager extends ComponentDefinition {
 
         }
     };
-
+    
     Handler<TaskTimeOut> handleTaskTimeOut = new Handler<TaskTimeOut>() {
         @Override
         @SuppressWarnings("SynchronizeOnNonFinalField")
@@ -270,6 +275,16 @@ public final class ResourceManager extends ComponentDefinition {
             } else {
                 System.out.println("** ERROR ** task finished but was not found in the currently running tasks ** ERROR **");
             }
+
+        }
+    };
+
+    Handler<RequestTimeout> handleRequestTimeOut = new Handler<RequestTimeout>() {
+        @Override
+        @SuppressWarnings("SynchronizeOnNonFinalField")
+        public void handle(RequestTimeout event) {
+
+            trigger(event.getEvent(),indexPort);
 
         }
     };
@@ -386,11 +401,17 @@ public final class ResourceManager extends ComponentDefinition {
     Handler<CyclonSample> handleCyclonSample = new Handler<CyclonSample>() {
         @Override
         public void handle(CyclonSample event) {
-            System.out.println(self.getIp().getHostAddress() + " Received samples: " + event.getSample().size() + " and has a queue of size[" + _queue_for_this_machine.size() + "]");
+            
+            ArrayList<Address> _addr = new ArrayList<Address>();
+            for(PeerDescriptor pd : event.getSample())
+            {
+                _addr.add(pd.getAddress());
+            }
+            System.out.println(self.getIp().getHostAddress() + " Received samples: " + _addr.size() + " and has a queue of size[" + _queue_for_this_machine.size() + "]");
 
             // receive a new list of neighbours
             neighbours.clear();
-            neighbours.addAll(event.getSample());
+            neighbours.addAll(_addr);
 
             // update routing tables
             for (Address p : neighbours) {
@@ -429,28 +450,55 @@ public final class ResourceManager extends ComponentDefinition {
             int _task_time = event.getTimeToHoldResource();
             Task _task = new Task(_task_id, _cpu, _mem, _task_time, self);
 
-            
+            if(!_gradient)
+            {
 
-            ArrayList<Address> _peers_to_probe = new ArrayList<Address>(neighbours);
+                ArrayList<Address> _peers_to_probe = new ArrayList<Address>(neighbours);
             
-            int _check_size = _peers_to_probe.size() - PROBES;
+                int _check_size = _peers_to_probe.size() - PROBES;
 
-            for (int iterator = 0; iterator < _check_size; iterator++) {
+                for (int iterator = 0; iterator < _check_size; iterator++) {
                 _peers_to_probe.remove(random.nextInt(_peers_to_probe.size()));
-            }
+                }
             
-            _idle_tasks.add(_task);
-                for (Address peer : _peers_to_probe) {
-                    synchronized (_idle_tasks) {
-                        Iterator i = _idle_tasks.iterator();
-                        while (i.hasNext()) {
-                            Task t = (Task) i.next();
-                            t.setExpected_responses(_peers_to_probe.size());
-                            RequestResources.Request r = new RequestResources.Request(self, peer, t.getCpus(), t.getMemory(), t.getId());
-                            trigger(r, networkPort);
+                if(!_idle_tasks.contains(_task))
+                {
+                    _idle_tasks.add(_task);
+                }
+                if(!_peers_to_probe.isEmpty())
+                {
+                    for (Address peer : _peers_to_probe) {
+                        synchronized (_idle_tasks) {
+                            Iterator i = _idle_tasks.iterator();
+                            while (i.hasNext()) {
+                                Task t = (Task) i.next();
+                                t.setExpected_responses(_peers_to_probe.size());
+                                RequestResources.Request r = new RequestResources.Request(self, peer, t.getCpus(), t.getMemory(), t.getId());
+                                trigger(r, networkPort);
+                            }
                         }
                     }
                 }
+                else
+                {
+                    ScheduleTimeout st = new ScheduleTimeout(2000);
+                    st.setTimeoutEvent(new RequestTimeout(st,event));
+                    trigger(st,timerPort);
+                }
+            }
+            else
+            {
+               String _type = DetermineTopology(_cpu,_mem);
+               ArrayList<PeerDescriptor> _topology = null;
+               if(_type.equals("cpu"))
+               {
+                  _topology  = new ArrayList<PeerDescriptor>(_tmanCpu);
+               }
+               else
+               {
+                  _topology = new ArrayList<PeerDescriptor>(_tmanMem);
+               }
+            }
         }
     };
     
@@ -473,10 +521,23 @@ public final class ResourceManager extends ComponentDefinition {
         }
     };
     
-    Handler<TManSample> handleTManSample = new Handler<TManSample>() {
+    Handler<TManSample.Cpu> handleTManSampleCpu = new Handler<TManSample.Cpu>() {
         @Override
-        public void handle(TManSample event) {
-            // TODO: 
+        public void handle(TManSample.Cpu event) 
+        {
+            ArrayList<PeerDescriptor> sample = event.getSample();
+            _tmanCpu.clear();
+            _tmanCpu.addAll(sample);
+        }
+    };
+    
+    Handler<TManSample.Mem> handleTManSampleMem = new Handler<TManSample.Mem>() {
+        @Override
+        public void handle(TManSample.Mem event) 
+        {
+            ArrayList<PeerDescriptor> sample = event.getSample();
+            _tmanMem.clear();
+            _tmanCpu.addAll(sample);
         }
     };
 
@@ -496,5 +557,19 @@ public final class ResourceManager extends ComponentDefinition {
         st.setTimeoutEvent(timeout);
         trigger(st, timerPort);
     }
+    
+     private String DetermineTopology(int _cpu, int _mem)
+     {
+         double mem = _mem / 1000;
+         
+         if(mem > _cpu)
+         {
+             return "mem";
+         }
+         else
+         {
+             return "cpu";
+         }
+     }
 
 }

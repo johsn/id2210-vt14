@@ -6,9 +6,11 @@ import java.util.ArrayList;
 
 import cyclon.system.peer.cyclon.CyclonSample;
 import cyclon.system.peer.cyclon.CyclonSamplePort;
-import java.util.Collections;
+import cyclon.system.peer.cyclon.DescriptorBuffer;
+import cyclon.system.peer.cyclon.PeerDescriptor;
 import java.util.List;
 import java.util.Random;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,10 +37,16 @@ public final class TMan extends ComponentDefinition {
     Positive<Timer> timerPort = positive(Timer.class);
     private long period;
     private Address self;
-    private ArrayList<Address> tmanPartners;
+    
+    private ArrayList<PeerDescriptor> _view_cpu;
+    private ArrayList<PeerDescriptor> _view_mem;
+    
     private TManConfiguration tmanConfiguration;
     private Random r;
-    private AvailableResources availableResources;
+    private AvailableResources availableResources; 
+    PeerDescriptor _mydescriptor;
+    private UUID _id;
+    private int _view_size = 5;
 
     public class TManSchedule extends Timeout {
 
@@ -50,12 +58,26 @@ public final class TMan extends ComponentDefinition {
             super(request);
         }
     }
+    
+    public class TManPost extends Timeout {
+
+        public TManPost(SchedulePeriodicTimeout request) {
+            super(request);
+        }
+
+        public TManPost(ScheduleTimeout request) {
+            super(request);
+        }
+    }
 
     public TMan() {
-        tmanPartners = new ArrayList<Address>();
-
+        
+        _view_cpu = new ArrayList<PeerDescriptor>();
+        _view_mem = new ArrayList<PeerDescriptor>();
+        
         subscribe(handleInit, control);
         subscribe(handleRound, timerPort);
+        subscribe(handleTManPost, timerPort);
         subscribe(handleCyclonSample, cyclonSamplePort);
         subscribe(handleTManPartnersResponse, networkPort);
         subscribe(handleTManPartnersRequest, networkPort);
@@ -69,36 +91,104 @@ public final class TMan extends ComponentDefinition {
             period = tmanConfiguration.getPeriod();
             r = new Random(tmanConfiguration.getSeed());
             availableResources = init.getAvailableResources();
+            _mydescriptor = new PeerDescriptor(self);
+            _mydescriptor.setAvailableResources(availableResources);
+            _id = UUID.randomUUID();
+            
             SchedulePeriodicTimeout rst = new SchedulePeriodicTimeout(period, period);
             rst.setTimeoutEvent(new TManSchedule(rst));
             trigger(rst, timerPort);
+            
+            SchedulePeriodicTimeout spt = new SchedulePeriodicTimeout(period,period);
+            spt.setTimeoutEvent(new TManPost(spt));
+            trigger(spt,timerPort);
 
+        }
+    };
+    
+    Handler<TManPost> handleTManPost = new Handler<TManPost>() {
+        @Override
+        public void handle(TManPost event) {
+            
+            TManSample.Cpu _sample_cpu = new TManSample.Cpu(_view_cpu);
+            TManSample.Mem _sample_mem = new TManSample.Mem(_view_mem);
+            
+            trigger(_sample_cpu,tmanPort);
+            trigger(_sample_mem,tmanPort);
+            
         }
     };
 
     Handler<TManSchedule> handleRound = new Handler<TManSchedule>() {
         @Override
         public void handle(TManSchedule event) {
-            Snapshot.updateTManPartners(self, tmanPartners);
-
-            // Publish sample to connected components
-            trigger(new TManSample(tmanPartners), tmanPort);
+            
+            ArrayList<PeerDescriptor> _buffer_cpu = new ArrayList<PeerDescriptor>();
+            ArrayList<PeerDescriptor> _buffer_mem = new ArrayList<PeerDescriptor>();
+            
+            _view_cpu = rank(_view_cpu,"cpu");
+            _view_mem = rank(_view_mem,"mem");
+            
+            PeerDescriptor peer_cpu = selectPeer(_view_cpu);
+            PeerDescriptor peer_mem = selectPeer(_view_mem);
+            
+            ArrayList<PeerDescriptor> _mydescriptorlist = new ArrayList<PeerDescriptor>();
+            _mydescriptorlist.add(_mydescriptor);
+            
+            _buffer_cpu = merge(_view_cpu,_mydescriptorlist);
+            _buffer_mem = merge(_view_mem,_mydescriptorlist);
+            
+            DescriptorBuffer db_cpu = new DescriptorBuffer(_mydescriptor,_buffer_cpu);
+            DescriptorBuffer db_mem = new DescriptorBuffer(_mydescriptor,_buffer_mem);
+            
+            ExchangeMsg.Request r_cpu = new ExchangeMsg.Request(_id, db_cpu,"cpu", self, peer_cpu.getAddress());
+            ExchangeMsg.Request r_mem = new ExchangeMsg.Request(_id, db_mem,"mem", self, peer_mem.getAddress());
+            
+            trigger(r_cpu,networkPort);
+            trigger(r_mem,networkPort);
+            
         }
     };
 
     Handler<CyclonSample> handleCyclonSample = new Handler<CyclonSample>() {
         @Override
         public void handle(CyclonSample event) {
-            List<Address> cyclonPartners = event.getSample();
-
-            // merge cyclonPartners into TManPartners
+            List<PeerDescriptor> cyclonPartners = event.getSample();
+            _view_cpu = merge(_view_cpu,cyclonPartners);
+            _view_mem = merge(_view_mem,cyclonPartners);
         }
+        
     };
 
     Handler<ExchangeMsg.Request> handleTManPartnersRequest = new Handler<ExchangeMsg.Request>() {
         @Override
         public void handle(ExchangeMsg.Request event) {
-
+            
+            DescriptorBuffer _recieved_buffer = event.getRandomBuffer();
+            ArrayList<PeerDescriptor> buffer;
+            if(event.getType().equals("cpu"))
+            {
+                ArrayList<PeerDescriptor> _mydescriptorlist = new ArrayList<PeerDescriptor>();
+                _mydescriptorlist.add(_mydescriptor);
+                buffer = merge(_view_cpu,_mydescriptorlist);
+                DescriptorBuffer db = new DescriptorBuffer(_mydescriptor,buffer);
+                ExchangeMsg.Response r = new ExchangeMsg.Response(_id, db,"cpu", self, event.getSource());
+                trigger(r,networkPort);
+                buffer = merge(_view_cpu,_recieved_buffer.getDescriptors());
+                _view_cpu = selectView(rank(buffer,event.getType()));
+            }
+            else
+            {
+                ArrayList<PeerDescriptor> _mydescriptorlist = new ArrayList<PeerDescriptor>();
+                _mydescriptorlist.add(_mydescriptor);
+                buffer = merge(_view_mem,_mydescriptorlist);
+                DescriptorBuffer db = new DescriptorBuffer(_mydescriptor,buffer);
+                ExchangeMsg.Response r = new ExchangeMsg.Response(_id, db,"mem", self, event.getSource());
+                trigger(r,networkPort);
+                buffer = merge(_view_mem,_recieved_buffer.getDescriptors());
+                _view_mem = selectView(rank(buffer,event.getType()));
+                
+            }
         }
     };
 
@@ -106,43 +196,120 @@ public final class TMan extends ComponentDefinition {
         @Override
         public void handle(ExchangeMsg.Response event) {
 
+            DescriptorBuffer _recieved_buffer = event.getSelectedBuffer();
+            ArrayList<PeerDescriptor> buffer;
+            if(event.getType().equals("cpu"))
+            {
+                buffer = merge(_view_cpu,_recieved_buffer.getDescriptors());
+                _view_cpu = selectView(rank(buffer,event.getType()));
+            }
+            else
+            {
+                buffer = merge(_view_mem,_recieved_buffer.getDescriptors());
+                _view_mem = selectView(rank(buffer,event.getType()));
+            }
         }
     };
-
-    // TODO - if you call this method with a list of entries, it will
-    // return a single node, weighted towards the 'best' node (as defined by
-    // ComparatorById) with the temperature controlling the weighting.
-    // A temperature of '1.0' will be greedy and always return the best node.
-    // A temperature of '0.000001' will return a random node.
-    // A temperature of '0.0' will throw a divide by zero exception :)
-    // Reference:
-    // http://webdocs.cs.ualberta.ca/~sutton/book/2/node4.html
-    public Address getSoftMaxAddress(List<Address> entries) {
-        Collections.sort(entries, new ComparatorById(self));
-
-        double rnd = r.nextDouble();
-        double total = 0.0d;
-        double[] values = new double[entries.size()];
-        int j = entries.size() + 1;
-        for (int i = 0; i < entries.size(); i++) {
-            // get inverse of values - lowest have highest value.
-            double val = j;
-            j--;
-            values[i] = Math.exp(val / tmanConfiguration.getTemperature());
-            total += values[i];
-        }
-
-        for (int i = 0; i < values.length; i++) {
-            if (i != 0) {
-                values[i] += values[i - 1];
-            }
-            // normalise the probability for this entry
-            double normalisedUtility = values[i] / total;
-            if (normalisedUtility >= rnd) {
-                return entries.get(i);
+    
+    private ArrayList<PeerDescriptor> merge(ArrayList<PeerDescriptor> _merge_with , List<PeerDescriptor> _to_merge)
+    {
+        ArrayList<PeerDescriptor> _merged = new ArrayList<PeerDescriptor>(_merge_with);
+        for(PeerDescriptor pd : _to_merge)
+        {
+            if(!_merged.contains(pd))
+            {
+                _merged.add(pd);
             }
         }
-        return entries.get(entries.size() - 1);
+            
+        return _merged;
+        
     }
+    
+     private ArrayList<PeerDescriptor> rank(ArrayList<PeerDescriptor> _to_rank,String type)
+     {
+         int index = 0;
+         ArrayList<PeerDescriptor> _ranked = new ArrayList<PeerDescriptor>();
+         if(type.equals("cpu"))
+         {
+             while(!_to_rank.isEmpty())
+             {
+                 PeerDescriptor _most_cpu_peer = takeLargestCpuPeer(_to_rank);
+                 _to_rank.remove(_most_cpu_peer);
+                 _ranked.add(index, _most_cpu_peer);
+                 index++;
+             }
+         }
+         else
+         {
+             while(!_to_rank.isEmpty())
+             {
+                 PeerDescriptor _most_mem_peer = takeLargestMemPeer(_to_rank);
+                 _to_rank.remove(_most_mem_peer);
+                 _ranked.add(index, _most_mem_peer);
+                 index++;
+             }
+         }
+        
+         
+         return _ranked;
+        
+     }
+     
+     private PeerDescriptor takeLargestCpuPeer(ArrayList<PeerDescriptor> _to_rank)
+     {
+         PeerDescriptor _current_peer = _to_rank.get(0);
+         for(PeerDescriptor pd : _to_rank)
+         {
+             if(pd.getAvailableResources().getNumFreeCpus() > _current_peer.getAvailableResources().getNumFreeCpus())
+             {
+                 _current_peer = pd;
+             }
+         }
+         
+         return _current_peer;
+     }
+     
+     
+
+    private PeerDescriptor takeLargestMemPeer(ArrayList<PeerDescriptor> _to_rank) {
+        
+         PeerDescriptor _current_peer = _to_rank.get(0);
+         for(PeerDescriptor pd : _to_rank)
+         {
+             if(pd.getAvailableResources().getFreeMemInMbs() > _current_peer.getAvailableResources().getFreeMemInMbs())
+             {
+                 _current_peer = pd;
+             }
+         }
+         
+         return _current_peer;
+    }
+    
+    private PeerDescriptor selectPeer(ArrayList<PeerDescriptor> list)
+    {
+        return list.get(0);
+    }
+    
+    
+
+        private ArrayList<PeerDescriptor> selectView(ArrayList<PeerDescriptor> list) {
+            
+            if(list.size() > _view_size)
+            {
+                
+                for(int index = _view_size;index < list.size();index++)
+                {
+                    list.remove(list.get(index));
+                }
+            }
+            return list;
+        }
+
+        
+    
+
+       
+    
 
 }

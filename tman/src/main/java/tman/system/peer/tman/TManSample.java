@@ -1,25 +1,40 @@
 package tman.system.peer.tman;
 
+import cyclon.system.peer.cyclon.PeerDescriptor;
 import java.util.ArrayList;
 
 
 import se.sics.kompics.Event;
-import se.sics.kompics.address.Address;
 
 
-public class TManSample extends Event {
-	ArrayList<Address> partners = new ArrayList<Address>();
+public class TManSample {
+	
 
+    public static class Cpu extends Event {
 
-	public TManSample(ArrayList<Address> partners) {
-		this.partners = partners;
-	}
+        private final ArrayList<PeerDescriptor> _partners;
+        public Cpu(ArrayList<PeerDescriptor> partners) 
+        {
+            _partners = partners;
+        }
         
-	public TManSample() {
-	}
+        public ArrayList<PeerDescriptor> getSample()
+        {
+            return _partners;
+        }
+    }
 
-
-	public ArrayList<Address> getSample() {
-		return this.partners;
-	}
+    public static class Mem extends Event {
+        
+        private final ArrayList<PeerDescriptor> _partners;
+        public Mem(ArrayList<PeerDescriptor> partners){
+            
+            _partners = partners;
+        }
+        
+        public ArrayList<PeerDescriptor> getSample()
+        {
+            return _partners;
+        }
+    }
 }

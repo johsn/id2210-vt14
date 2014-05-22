@@ -8,11 +8,11 @@ import se.sics.kompics.address.Address;
 
 public class DescriptorBuffer implements Serializable {
 	private static final long serialVersionUID = -4414783055393007206L;
-	private final Address from;
+	private final PeerDescriptor from;
 	private final ArrayList<PeerDescriptor> descriptors;
 
 
-	public DescriptorBuffer(Address from,
+	public DescriptorBuffer(PeerDescriptor from,
 			ArrayList<PeerDescriptor> descriptors) {
 		super();
 		this.from = from;
@@ -20,7 +20,7 @@ public class DescriptorBuffer implements Serializable {
 	}
 
 
-	public Address getFrom() {
+	public PeerDescriptor getFrom() {
 		return from;
 	}
 
