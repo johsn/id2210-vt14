@@ -15,18 +15,10 @@ import se.sics.kompics.timer.Timeout;
  * @author johsn
  */
 class RequestTimeout extends Timeout{
-
     
-    private final RequestResource _event;
-    
-    public RequestTimeout(ScheduleTimeout st, RequestResource event)
+    public RequestTimeout(ScheduleTimeout st)
     {
         super(st);
-        this._event = event;
-    }
-
-    public RequestResource getEvent() {
-        return _event;
     }
     
 }

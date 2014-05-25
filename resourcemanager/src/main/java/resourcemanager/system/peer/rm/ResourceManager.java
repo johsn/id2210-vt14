@@ -57,12 +57,14 @@ public final class ResourceManager extends ComponentDefinition {
     // This is a routing table maintaining a list of pairs in each partition.
     private Map<Integer, List<PeerDescriptor>> routingTable;
 
-    private static final int PROBES = 10;
+    private static final int PROBES = 4;
     private static final int MAX_RESPONSE_TIMEOUT = 2000;
     private int _current_task_id = 0;
+    private int _current_batch_id = 0;
     private final Object _lock_task_id = new Object();
     private final Object _lock_responses = new Object();
-    private final boolean _gradient = false;
+    private final Object _lock_bacth_id = new Object();
+    private final boolean _gradient = true;
 
     private List<Task> _idle_tasks = Collections.synchronizedList(new ArrayList());
     private List<Task> _non_idle_tasks = Collections.synchronizedList(new ArrayList());
@@ -76,6 +78,15 @@ public final class ResourceManager extends ComponentDefinition {
             this._current_task_id = this._current_task_id + 1;
             return tmp;
         }
+    }
+    
+    private int getCurrentBatchId() {
+            synchronized(_lock_bacth_id)
+                    {
+                        int tmp = _current_batch_id;
+                        _current_batch_id = _current_batch_id + 1;
+                        return tmp;
+                    }
     }
     Comparator<PeerDescriptor> peerAgeComparator = new Comparator<PeerDescriptor>() {
         @Override
@@ -103,6 +114,8 @@ public final class ResourceManager extends ComponentDefinition {
         subscribe(handlePing, networkPort);
         subscribe(handlePong, networkPort);
         subscribe(handleConfirm, networkPort);
+        subscribe(handleExpectedResponses,networkPort);
+        subscribe(handleBestPeerRequest,networkPort);
         subscribe(handleTManSampleCpu, tmanPort);
         subscribe(handleTManSampleMem, tmanPort);
     }
@@ -120,6 +133,27 @@ public final class ResourceManager extends ComponentDefinition {
             SchedulePeriodicTimeout rst = new SchedulePeriodicTimeout(period, period);
             rst.setTimeoutEvent(new UpdateTimeout(rst));
             trigger(rst, timerPort);
+
+        }
+    };
+    
+    Handler<RequestResources.SetExpectedResponses> handleExpectedResponses = new Handler<RequestResources.SetExpectedResponses>() {
+        @Override
+        public void handle(RequestResources.SetExpectedResponses event) {
+           
+            synchronized(_idle_tasks)
+            {
+                Iterator i = _idle_tasks.iterator();
+                while(i.hasNext())
+                {
+                    Task t = (Task)i.next();
+                    if(t.getId() == event.getId())
+                    {
+                        t.setExpected_responses(event.getExpected_responses());
+                        break;
+                    }
+                }
+            }
 
         }
     };
@@ -205,17 +239,16 @@ public final class ResourceManager extends ComponentDefinition {
             int _task_time = event.getTask_time();
             int _schedulers_task_id = event.getId();
 
-            Task _task_to_run = new Task(_schedulers_task_id, _cpu_to_allocate, _mem_to_allocate, _task_time, event.getSource());
-            _task_to_run.setPotentialExecutor(self);
+                Task _task_to_run = new Task(_schedulers_task_id, _cpu_to_allocate, _mem_to_allocate, _task_time, event.getSource());
+                _task_to_run.setPotentialExecutor(self);
 
-            if (availableResources.isAvailable(_task_to_run.getCpus(), _task_to_run.getMemory())) {
-                _tasks_runnning_on_this_machine.add(_task_to_run);
-                availableResources.allocate(_task_to_run.getCpus(), _task_to_run.getMemory());
-                StartTimerForTaskToFinish(_task_to_run.getTask_time(), _task_to_run.getId(), _task_to_run.getScheduler());
-            } else {
-                _queue_for_this_machine.add(_task_to_run);
-            }
-
+                if (availableResources.isAvailable(_task_to_run.getCpus(), _task_to_run.getMemory())) {
+                    _tasks_runnning_on_this_machine.add(_task_to_run);
+                    availableResources.allocate(_task_to_run.getCpus(), _task_to_run.getMemory());
+                    StartTimerForTaskToFinish(_task_to_run.getTask_time(), _task_to_run.getId(), _task_to_run.getScheduler());
+                } else {
+                    _queue_for_this_machine.add(_task_to_run);
+                }
         }
 
     };
@@ -283,9 +316,8 @@ public final class ResourceManager extends ComponentDefinition {
         @Override
         @SuppressWarnings("SynchronizeOnNonFinalField")
         public void handle(RequestTimeout event) {
-
-            trigger(event.getEvent(),indexPort);
-
+            
+            handleRequestResource.handle(new RequestResource(true));
         }
     };
 
@@ -315,13 +347,15 @@ public final class ResourceManager extends ComponentDefinition {
                         } else {
                             System.out.println(" ");
                             System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
-                            System.out.println("Task with id ["+t.getId()+"] that was scheduled on peer [" + t.getPotentialExecutor().getIp().getHostAddress()+"] hasn't been ponged and is therefore rescheduled on another host");
+                            System.out.println("Task with id ["+t.getId()+"] that was scheduled on peer [" + t.getPotentialExecutor().getIp().getHostAddress()+"] hasn't been ponged and is therefore rescheduled on another host using Resource Manager["+self.getIp().getHostAddress()+"]");
                             System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
                             System.out.println(" ");
                             _non_idle_tasks.remove(t);
                             t.setResponses(0);
                             t.setShortest_queue(Integer.MAX_VALUE);
                             _idle_tasks.add(t);
+                            RequestResource r = new RequestResource(true);
+                            handleRequestResource.handle(r);
                             break;
                         }
                     }
@@ -339,9 +373,132 @@ public final class ResourceManager extends ComponentDefinition {
             int _requested_mem = event.getAmountMemInMb();
             int _requested_task_id = event.getId();
             boolean _handle_allocation = availableResources.isAvailable(_requested_cpu, _requested_mem);
+            
+                RequestResources.Response r = new RequestResources.Response(self, event.getSource(), _handle_allocation, _requested_task_id, _queue_for_this_machine.size());
+                if(event.isBatch_task()){
+                    r.setBatch_task(event.isBatch_task());
+                    r.setBatch_id(event.getBatch_id());
+                }
+                trigger(r, networkPort);
+        }
+    };
+    
+    Handler<RequestResources.FindBestPeerToRunTask> handleBestPeerRequest = new Handler<RequestResources.FindBestPeerToRunTask>() {
+        @Override
+        public void handle(RequestResources.FindBestPeerToRunTask event) {
 
-            RequestResources.Response r = new RequestResources.Response(self, event.getSource(), _handle_allocation, _requested_task_id, _queue_for_this_machine.size());
-            trigger(r, networkPort);
+            if(event.getType().equals("cpu"))
+            {
+                if(!_tmanCpu.isEmpty() && _tmanCpu.get(0).getAvailableResources().getNumFreeCpus() > availableResources.getNumFreeCpus())
+                {
+                    RequestResources.FindBestPeerToRunTask s = new RequestResources.FindBestPeerToRunTask(self, _tmanCpu.get(0).getAddress(), "cpu", event.getNumCpus(), event.getAmountMemInMb(), event.getId());
+                    if(event.isBatch_task())
+                    {
+                        s.setBatch_task(true);
+                        s.setBatch_id(event.getBatch_id());
+                    }
+                    s.setScheduler(event.getScheduler());
+                    trigger (s,networkPort);
+                }
+                else
+                {
+                    RequestResources.SetExpectedResponses s = new RequestResources.SetExpectedResponses(self,event.getScheduler(),event.getId(),_tmanCpu.size());
+                    trigger(s,networkPort);
+                    
+                    if(availableResources.isAvailable(event.getNumCpus(), event.getAmountMemInMb()))
+                    {
+                        RequestResources.Response r = new RequestResources.Response(self, event.getScheduler(), true, event.getId(), _queue_for_this_machine.size());
+                        if(event.isBatch_task())
+                        {
+                            r.setBatch_task(true);
+                            r.setBatch_id(event.getBatch_id());
+                        }
+                        trigger(r,networkPort);
+                    }
+                    else
+                    {
+                        if(!_tmanCpu.isEmpty())
+                        {
+                            for(PeerDescriptor pd : _tmanCpu)
+                            {
+                                RequestResources.Request r = new RequestResources.Request(event.getScheduler(), pd.getAddress(), event.getNumCpus(), event.getAmountMemInMb(), event.getId());
+                                if(event.isBatch_task())
+                                {
+                                    r.setBatch_task(true);
+                                    r.setBatch_id(event.getBatch_id());
+                                }
+                                trigger(r,networkPort);
+                            }
+                        }
+                        else
+                        {
+                            RequestResources.Response r = new RequestResources.Response(self, event.getScheduler(), true, event.getId(), _queue_for_this_machine.size());
+                            if(event.isBatch_task())
+                            {
+                                r.setBatch_task(true);
+                                r.setBatch_id(event.getBatch_id());
+                            }
+                            trigger(r,networkPort);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                if(!_tmanMem.isEmpty() && _tmanMem.get(0).getAvailableResources().getFreeMemInMbs() > availableResources.getFreeMemInMbs())
+                {
+                    RequestResources.FindBestPeerToRunTask s = new RequestResources.FindBestPeerToRunTask(self,_tmanMem.get(0).getAddress(),"mem",event.getNumCpus(),event.getAmountMemInMb(),event.getId());
+                    if(event.isBatch_task())
+                    {
+                        s.setBatch_task(true);
+                        s.setBatch_id(event.getBatch_id());
+                    }
+                    s.setScheduler(event.getScheduler());
+                    trigger(s,networkPort);
+                }
+                else
+                {
+                    RequestResources.SetExpectedResponses s = new RequestResources.SetExpectedResponses(self,event.getScheduler(),event.getId(),_tmanCpu.size());
+                    trigger(s,networkPort);
+                    
+                    if(availableResources.isAvailable(event.getNumCpus(), event.getAmountMemInMb()))
+                    {
+                        RequestResources.Response r = new RequestResources.Response(self, event.getScheduler(), true, event.getId(), _queue_for_this_machine.size());
+                        if(event.isBatch_task())
+                        {
+                            r.setBatch_task(true);
+                            r.setBatch_id(event.getBatch_id());
+                        }
+                        trigger(r,networkPort);
+                    }
+                    else
+                    {
+                        if(!_tmanMem.isEmpty())
+                        {
+                            for(PeerDescriptor pd : _tmanMem)
+                            {
+                                RequestResources.Request r = new RequestResources.Request(event.getScheduler(), pd.getAddress(), event.getNumCpus(), event.getAmountMemInMb(), event.getId());
+                                if(r.isBatch_task())
+                                {
+                                    r.setBatch_task(true);
+                                    r.setBatch_id(event.getBatch_id());
+                                }
+                                trigger(r,networkPort);
+                            }
+                        }
+                        else
+                        {
+                            RequestResources.Response r = new RequestResources.Response(self, event.getScheduler(), true, event.getId(), _queue_for_this_machine.size());
+                            if(event.isBatch_task())
+                            {
+                                r.setBatch_task(true);
+                                r.setBatch_id(event.getBatch_id());
+                            }
+                            trigger(r,networkPort);
+                        }
+                    }   
+                }
+            }
         }
     };
     Handler<RequestResources.Response> handleResourceAllocationResponse = new Handler<RequestResources.Response>() {
@@ -354,13 +511,38 @@ public final class ResourceManager extends ComponentDefinition {
                 Iterator i = _idle_tasks.iterator();
                 while (i.hasNext()) {
                     Task t = (Task) i.next();
-                    if (t.getId() == event.getId()) {
+                    if(t.isBatch_task())
+                    {
+                        synchronized(_non_idle_tasks)
+                        {
+                            Iterator j = _non_idle_tasks.iterator();
+                            while(j.hasNext())
+                            {
+                                Task te = (Task)j.next();
+                                if(te.isBatch_task() && te.getBatch_id() == t.getBatch_id() && te.getPotentialExecutor().equals(event.getSource()))
+                                {
+                                    //Already scheduled a task from this batch on that machine
+                                    return;
+                                }
+                            }
+                        }
+                        if (t.getId() == event.getId())
+                        {
+                            _task_in_question = t;
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        if (t.getId() == event.getId()) {
                         _task_in_question = t;
                         break;
+                        }
                     }
+                    
                 }
             }
-            if (event.isSuccess() && _task_in_question != null) {
+            if (event.isSuccess()  && _task_in_question != null) {
                 _idle_tasks.remove(_task_in_question);
                 _task_in_question.setPotentialExecutor(event.getSource());
                 _non_idle_tasks.add(_task_in_question);
@@ -407,8 +589,10 @@ public final class ResourceManager extends ComponentDefinition {
             {
                 _addr.add(pd.getAddress());
             }
+            if(!_gradient)
+            {
             System.out.println(self.getIp().getHostAddress() + " Received samples: " + _addr.size() + " and has a queue of size[" + _queue_for_this_machine.size() + "]");
-
+            }
             // receive a new list of neighbours
             neighbours.clear();
             neighbours.addAll(_addr);
@@ -438,18 +622,51 @@ public final class ResourceManager extends ComponentDefinition {
         @Override
         @SuppressWarnings("SynchronizeOnNonFinalField")
         public void handle(RequestResource event) {
-
-            System.out.println(" ");
-            System.out.println("#################################################################################################################################################");
-            System.out.println("ResourceManager [" + self.getIp().getHostAddress() + "] wants to schedule CPU[" + event.getNumCpus() + "] and MEM[" + event.getMemoryInMbs() + "]");
-            System.out.println("#################################################################################################################################################");
-            System.out.println(" ");
-            int _cpu = event.getNumCpus();
-            int _mem = event.getMemoryInMbs();
-            int _task_id = getCurrentTaskId();
-            int _task_time = event.getTimeToHoldResource();
-            Task _task = new Task(_task_id, _cpu, _mem, _task_time, self);
-
+            
+            if(!event.isEmpty() && !event.isBatch_task())
+            {
+                System.out.println(" ");
+                System.out.println("#################################################################################################################################################");
+                System.out.println("ResourceManager [" + self.getIp().getHostAddress() + "] wants to schedule CPU[" + event.getNumCpus() + "] and MEM[" + event.getMemoryInMbs() + "]");
+                System.out.println("#################################################################################################################################################");
+                System.out.println(" ");
+            }
+            else if(event.isEmpty())
+            {
+                System.out.println(" ");
+                System.out.println("#################################################################################################################################################");
+                System.out.println("ResourceManager [" + self.getIp().getHostAddress() + "] wants to schedule task that did not finish, either due to a peer dying or 0 samples");
+                System.out.println("#################################################################################################################################################");
+                System.out.println(" ");
+            }
+            Task _task = null;
+            int _cpu;
+            int _mem;
+            int _task_id;
+            int _task_time;
+            if(!event.isEmpty())
+            {
+                _cpu = event.getNumCpus();
+                _mem = event.getMemoryInMbs();
+                _task_id = getCurrentTaskId();
+                _task_time = event.getTimeToHoldResource();
+                
+                if(event.isBatch_task())
+                {
+                    _task = new Task(_task_id, _cpu, _mem, _task_time, self);
+                    _task.setBatch_task(true);
+                    _task.setBatch_id(event.getBatch_id());
+                }
+                else
+                {
+                    _task = new Task(_task_id, _cpu, _mem, _task_time, self);
+                    _task.setBatch_task(false);
+                }
+                if(!_idle_tasks.contains(_task))
+                {
+                    _idle_tasks.add(_task);
+                }
+            }
             if(!_gradient)
             {
 
@@ -460,11 +677,8 @@ public final class ResourceManager extends ComponentDefinition {
                 for (int iterator = 0; iterator < _check_size; iterator++) {
                 _peers_to_probe.remove(random.nextInt(_peers_to_probe.size()));
                 }
-            
-                if(!_idle_tasks.contains(_task))
-                {
-                    _idle_tasks.add(_task);
-                }
+                
+                
                 if(!_peers_to_probe.isEmpty())
                 {
                     for (Address peer : _peers_to_probe) {
@@ -474,6 +688,11 @@ public final class ResourceManager extends ComponentDefinition {
                                 Task t = (Task) i.next();
                                 t.setExpected_responses(_peers_to_probe.size());
                                 RequestResources.Request r = new RequestResources.Request(self, peer, t.getCpus(), t.getMemory(), t.getId());
+                                if(t.isBatch_task())
+                                {
+                                    r.setBatch_task(true);
+                                    r.setBatch_id(t.getBatch_id());
+                                }
                                 trigger(r, networkPort);
                             }
                         }
@@ -482,22 +701,56 @@ public final class ResourceManager extends ComponentDefinition {
                 else
                 {
                     ScheduleTimeout st = new ScheduleTimeout(2000);
-                    st.setTimeoutEvent(new RequestTimeout(st,event));
+                    st.setTimeoutEvent(new RequestTimeout(st));
                     trigger(st,timerPort);
                 }
             }
             else
             {
-               String _type = DetermineTopology(_cpu,_mem);
-               ArrayList<PeerDescriptor> _topology = null;
-               if(_type.equals("cpu"))
+               for(Task task : _idle_tasks)
                {
-                  _topology  = new ArrayList<PeerDescriptor>(_tmanCpu);
-               }
-               else
-               {
-                  _topology = new ArrayList<PeerDescriptor>(_tmanMem);
-               }
+                    String _type = DetermineTopology(task.getCpus(),task.getMemory());
+                    if(_type.equals("cpu"))
+                    {
+                        if(!_tmanCpu.isEmpty())
+                        {
+                            RequestResources.FindBestPeerToRunTask s = new RequestResources.FindBestPeerToRunTask(self,_tmanCpu.get(0).getAddress(), "cpu", task.getCpus(), task.getMemory(), task.getId());
+                            if(task.isBatch_task())
+                            {
+                                s.setBatch_task(true);
+                                s.setBatch_id(task.getBatch_id());
+                            }
+                            s.setScheduler(self);
+                            trigger(s,networkPort);
+                        }
+                        else
+                        {
+                            ScheduleTimeout st = new ScheduleTimeout(2000);
+                            st.setTimeoutEvent(new RequestTimeout(st));
+                            trigger(st,timerPort);
+                        }
+                    }
+                    else
+                    {
+                        if(!_tmanMem.isEmpty())
+                        {
+                            RequestResources.FindBestPeerToRunTask s = new RequestResources.FindBestPeerToRunTask(self,_tmanMem.get(0).getAddress(), "mem", task.getCpus(), task.getMemory(), task.getId());
+                            if(task.isBatch_task())
+                            {
+                                s.setBatch_task(true);
+                                s.setBatch_id(task.getBatch_id());
+                            }
+                            s.setScheduler(self);
+                            trigger(s,networkPort);
+                        }
+                        else
+                        {
+                            ScheduleTimeout st = new ScheduleTimeout(2000);
+                            st.setTimeoutEvent(new RequestTimeout(st));
+                            trigger(st,timerPort);
+                        }
+                    }
+                }
             }
         }
     };
@@ -511,11 +764,19 @@ public final class ResourceManager extends ComponentDefinition {
             int _requested_cpu = event.getNumCpus();
             int _requested_mem = event.getMemoryInMbs();
             
-            System.out.println("ResourceManager " + self.getIp().getHostAddress() + " wants to schedule " + _requested_machines + " tasks, each with CPU["+_requested_cpu+"] and MEM["+_requested_mem+"]");
+            int _batch_id = getCurrentBatchId();
+            
+            System.out.println(" ");
+            System.out.println("#################################################################################################################################################");
+            System.out.println("ResourceManager " + self.getIp().getHostAddress() + " wants a batchjob for " + _requested_machines + " machines, each with CPU["+_requested_cpu+"] and MEM["+_requested_mem+"]");
+            System.out.println("#################################################################################################################################################");
+            System.out.println(" ");
             
             for(int i = 0; i < _requested_machines;i++)
             {
                 RequestResource r = new RequestResource(self.getId(),_requested_cpu,_requested_mem,event.getTimeToHoldResource());
+                r.setBatch_task(true);
+                r.setBatchId(_batch_id);
                 handleRequestResource.handle(r);
             }
         }
@@ -526,6 +787,10 @@ public final class ResourceManager extends ComponentDefinition {
         public void handle(TManSample.Cpu event) 
         {
             ArrayList<PeerDescriptor> sample = event.getSample();
+            if(_gradient)
+            {
+                System.out.println(self.getIp().getHostAddress() + " Received cpu_samples: " + sample.size() + " and has a queue of size[" + _queue_for_this_machine.size() + "]");
+            }
             _tmanCpu.clear();
             _tmanCpu.addAll(sample);
         }
@@ -536,8 +801,12 @@ public final class ResourceManager extends ComponentDefinition {
         public void handle(TManSample.Mem event) 
         {
             ArrayList<PeerDescriptor> sample = event.getSample();
+            if(_gradient)
+            {
+            System.out.println(self.getIp().getHostAddress() + " Received mem_samples: " + sample.size() + " and has a queue of size[" + _queue_for_this_machine.size() + "]");
+            }
             _tmanMem.clear();
-            _tmanCpu.addAll(sample);
+            _tmanMem.addAll(sample);
         }
     };
 

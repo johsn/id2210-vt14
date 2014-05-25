@@ -1,22 +1,25 @@
 package common.simulation.scenarios;
 
+import java.util.Random;
 import se.sics.kompics.p2p.experiment.dsl.SimulationScenario;
 
 @SuppressWarnings("serial")
 public class Scenario1 extends Scenario {
+        
 	private static SimulationScenario scenario = new SimulationScenario() {{
                 
+                final Random rnd = new Random();
 		StochasticProcess process0 = new StochasticProcess() {{
 			eventInterArrivalTime(constant(1000));
-			raise(3, Operations.peerJoin(), 
+			raise(10, Operations.peerJoin(), 
                                 uniform(0, Integer.MAX_VALUE), 
-                                constant(2), constant(2000)
+                                constant(8), constant(16000)
                              );
 		}};
                 
 		StochasticProcess _regular_request = new StochasticProcess() {{
 			eventInterArrivalTime(constant(100));
-			raise(1,Operations.requestResources(), 
+			raise(1000,Operations.requestResources(), 
                                 uniform(0, Integer.MAX_VALUE),
                                 constant(2), constant(2000),
                                 constant(1000*60*1) // 1 minute
@@ -25,7 +28,7 @@ public class Scenario1 extends Scenario {
                 
                 StochasticProcess _batch_request = new StochasticProcess() {{
 			eventInterArrivalTime(constant(100));
-			raise(10,Operations.requestBatch(), 
+			raise(30,Operations.requestBatch(), 
                                 uniform(0, Integer.MAX_VALUE),
                                 constant(3),
                                 constant(2), constant(2000),
@@ -49,6 +52,7 @@ public class Scenario1 extends Scenario {
                 //_batch_request.startAfterTerminationOf(2000, process0);
                 failPeersProcess.startAfterStartOf(30000, process0);
                 terminateProcess.startAfterTerminationOf(100*1000, _regular_request);
+                //terminateProcess.startAfterTerminationOf(100*1000, _batch_request);
 	}};
 
 	// -------------------------------------------------------------------

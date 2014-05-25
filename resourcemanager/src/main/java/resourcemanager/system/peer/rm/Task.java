@@ -26,6 +26,53 @@ class Task
     private int shortest_queue = Integer.MAX_VALUE;
     private boolean _ponged;
     private boolean _running;
+    private  boolean _batch_task;
+    private int batch_id;
+
+    
+    private long _time_to_find_resource;
+    private long _start_time;
+    private long _endtime;
+
+    public long getTime_to_find_resource() {
+        return _time_to_find_resource;
+    }
+
+    public void setTime_to_find_resource(long _time_to_find_resource) {
+        this._time_to_find_resource = _time_to_find_resource;
+    }
+
+    public long getStart_time() {
+        return _start_time;
+    }
+
+    public void setStart_time(long _start_time) {
+        this._start_time = _start_time;
+    }
+
+    public long getEndtime() {
+        return _endtime;
+    }
+
+    public void setEndtime(long _endtime) {
+        this._endtime = _endtime;
+    }
+    
+    public int getBatch_id() {
+        return batch_id;
+    }
+
+    public void setBatch_id(int batch_id) {
+        this.batch_id = batch_id;
+    }
+
+    public boolean isBatch_task() {
+        return _batch_task;
+    }
+
+    public void setBatch_task(boolean _batch_task) {
+        this._batch_task = _batch_task;
+    }
 
     public Address getShorest_queue_peer() {
         return _shorest_queue_peer;
