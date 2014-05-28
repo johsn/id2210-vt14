@@ -65,7 +65,7 @@ public final class ResourceManager extends ComponentDefinition {
     private final Object _lock_task_id = new Object();
     private final Object _lock_responses = new Object();
     private final Object _lock_bacth_id = new Object();
-    private final boolean _gradient = false;
+    private final boolean _gradient = true;
 
     private List<Task> _idle_tasks = Collections.synchronizedList(new ArrayList());
     private List<Task> _non_idle_tasks = Collections.synchronizedList(new ArrayList());
@@ -145,9 +145,8 @@ public final class ResourceManager extends ComponentDefinition {
         public void handle(PrintAvarage event) {
            
             long _sum = 0, _avarage = 0;
-            if(!_finished_tasks.isEmpty())
-            {
-                
+            if(_finished_tasks.size() > 30 )
+            {                
                 for(FinishedTasks ft : _finished_tasks)
                 {
                     _sum += ft.getTime_to_find_resources_for_this_task();
@@ -156,19 +155,10 @@ public final class ResourceManager extends ComponentDefinition {
                 
                 System.out.println(" ");
                 System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
-                System.out.println("ResourceManager " + self.getIp().getHostAddress() + " avaraged :"+ _avarage + " milliseconds in finding tasks");
+                System.out.println("ResourceManager " + self.getIp().getHostAddress() + " avaraged :"+ _avarage + " milliseconds in finding tasks, avaraged calculated using n= "+_finished_tasks.size());
                 System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
                 System.out.println(" ");
             }
-            else
-            {
-                System.out.println(" ");
-                System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
-                System.out.println("ResourceManager " + self.getIp().getHostAddress() + " did not get its task started, prob queued");
-                System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
-                System.out.println(" ");
-            }
-
         }
     };
     

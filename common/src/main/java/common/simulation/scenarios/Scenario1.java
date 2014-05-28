@@ -11,7 +11,7 @@ public class Scenario1 extends Scenario {
                 final Random rnd = new Random();
 		StochasticProcess process0 = new StochasticProcess() {{
 			eventInterArrivalTime(constant(1000));
-			raise(10, Operations.peerJoin(), 
+			raise(100, Operations.peerJoin(), 
                                 uniform(0, Integer.MAX_VALUE), 
                                 constant(8), constant(16000)
                              );
@@ -19,7 +19,7 @@ public class Scenario1 extends Scenario {
                 
 		StochasticProcess _regular_request = new StochasticProcess() {{
 			eventInterArrivalTime(constant(100));
-			raise(100,Operations.requestResources(), 
+			raise(1000,Operations.requestResources(), 
                                 uniform(0, Integer.MAX_VALUE),
                                 constant(2), constant(2000),
                                 constant(1000*60*1) // 1 minute
