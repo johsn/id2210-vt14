@@ -153,12 +153,21 @@ public final class ResourceManager extends ComponentDefinition {
                     _sum += ft.getTime_to_find_resources_for_this_task();
                 }
                 _avarage = _sum / _finished_tasks.size();
+                
+                System.out.println(" ");
+                System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
+                System.out.println("ResourceManager " + self.getIp().getHostAddress() + " avaraged :"+ _avarage + " milliseconds in finding tasks");
+                System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
+                System.out.println(" ");
             }
-            System.out.println(" ");
-            System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
-            System.out.println("ResourceManager " + self.getIp().getHostAddress() + " avaraged :"+ _avarage + " milliseconds in finding tasks");
-            System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
-            System.out.println(" ");
+            else
+            {
+                System.out.println(" ");
+                System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
+                System.out.println("ResourceManager " + self.getIp().getHostAddress() + " did not get its task started, prob queued");
+                System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
+                System.out.println(" ");
+            }
 
         }
     };
@@ -166,8 +175,7 @@ public final class ResourceManager extends ComponentDefinition {
     Handler<RequestResources.ResourceFound> handleResourceFound = new Handler<RequestResources.ResourceFound>() {
         @Override
         public void handle(RequestResources.ResourceFound event) {
-           
-            boolean check = false;
+            
             synchronized(_non_idle_tasks)
             {
                 Iterator i = _non_idle_tasks.iterator();
@@ -178,13 +186,8 @@ public final class ResourceManager extends ComponentDefinition {
                     {
                         long time = event.getTime_found_resource() - t.getStart_time();
                         t.setTime_to_find_resource(time);
-                        check = true;
                         break;
                     }
-                }
-                if(!check)
-                {
-                    System.out.println("Weird");
                 }
             }
 
@@ -359,7 +362,7 @@ public final class ResourceManager extends ComponentDefinition {
                 _tasks_runnning_on_this_machine.remove(_task_to_stop);
                             System.out.println(" ");
                             System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
-                            System.out.println("Peer "+ self.getIp().getHostAddress()+" finished a task and released CPU:"+ _task_to_stop.getCpus()+" and MEM:"+_task_to_stop.getMemory());
+                            System.out.println("Peer "+ self.getIp().getHostAddress()+" finished a task for "+_task_to_stop.getScheduler().getIp().getHostAddress()+" and released CPU:"+ _task_to_stop.getCpus()+" and MEM:"+_task_to_stop.getMemory());
                             System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
                             System.out.println(" ");
 
