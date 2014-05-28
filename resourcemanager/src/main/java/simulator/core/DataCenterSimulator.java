@@ -30,9 +30,12 @@ import common.simulation.ConsistentHashtable;
 import common.simulation.GenerateReport;
 import common.simulation.PeerFail;
 import common.simulation.PeerJoin;
+import common.simulation.PrintAvarage;
 import common.simulation.RequestResource;
 import common.simulation.SimulatorInit;
+import common.simulation.scenarios.KillExperiment;
 import java.net.InetAddress;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Random;
@@ -53,6 +56,7 @@ public final class DataCenterSimulator extends ComponentDefinition {
     private TManConfiguration tmanConfiguration;
     private Long identifierSpaceSize;
     private ConsistentHashtable<Long> ringNodes;
+    private ArrayList<Component> _peers_that_requested = new ArrayList<Component>();
     private AsIpGenerator ipGenerator = AsIpGenerator.getInstance(125);
     
     Random r = new Random(System.currentTimeMillis());
@@ -67,6 +71,7 @@ public final class DataCenterSimulator extends ComponentDefinition {
         subscribe(handlePeerJoin, simulator);
         subscribe(handlePeerFail, simulator);
         subscribe(handleTerminateExperiment, simulator);
+        subscribe(handleKillExperiment,simulator);
         subscribe(handleRequestResource, simulator);
         subscribe(handleBatchRequest, simulator);
     }
@@ -97,6 +102,10 @@ public final class DataCenterSimulator extends ComponentDefinition {
         public void handle(RequestResource event) {
             Long successor = ringNodes.getNode(event.getId());
             Component peer = peers.get(successor);
+            if(!_peers_that_requested.contains(peer))
+            {
+                _peers_that_requested.add(peer);
+            }
             trigger( event, peer.getNegative(RmPort.class));
         }
     };
@@ -106,6 +115,10 @@ public final class DataCenterSimulator extends ComponentDefinition {
         public void handle(BatchRequest event) {
             Long successor = ringNodes.getNode(event.getId());
             Component peer = peers.get(successor);
+            if(!_peers_that_requested.contains(peer))
+            {
+                _peers_that_requested.add(peer);
+            }
             trigger( event, peer.getNegative(RmPort.class));
         }
     };
@@ -147,13 +160,19 @@ public final class DataCenterSimulator extends ComponentDefinition {
     Handler<TerminateExperiment> handleTerminateExperiment = new Handler<TerminateExperiment>() {
         @Override
         public void handle(TerminateExperiment event) {
-            Iterator i = peers.entrySet().iterator();
-            while(i.hasNext())
-            {
-                Map.Entry pairs = (Map.Entry)i.next();
-                Component peer = (Component) pairs.getValue();
-                trigger(event, peer.getNegative(RmPort.class));
+            System.err.println("Getting results....");
+            for(Component peer : _peers_that_requested)
+            {        
+                trigger(new PrintAvarage(),peer.getNegative(RmPort.class));
             }
+            
+        }
+    };
+    
+    Handler<KillExperiment> handleKillExperiment = new Handler<KillExperiment>() {
+        @Override
+        public void handle(KillExperiment event) {
+            
             System.err.println("Finishing experiment - terminating....");
             System.exit(0);
         }

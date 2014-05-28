@@ -3,6 +3,7 @@ package resourcemanager.system.peer.rm;
 import common.configuration.RmConfiguration;
 import common.peer.AvailableResources;
 import common.simulation.BatchRequest;
+import common.simulation.PrintAvarage;
 import common.simulation.RequestResource;
 import cyclon.system.peer.cyclon.CyclonSample;
 import cyclon.system.peer.cyclon.CyclonSamplePort;
@@ -24,7 +25,6 @@ import se.sics.kompics.Negative;
 import se.sics.kompics.Positive;
 import se.sics.kompics.address.Address;
 import se.sics.kompics.network.Network;
-import se.sics.kompics.p2p.experiment.dsl.events.TerminateExperiment;
 import se.sics.kompics.timer.SchedulePeriodicTimeout;
 import se.sics.kompics.timer.ScheduleTimeout;
 import se.sics.kompics.timer.Timer;
@@ -65,7 +65,7 @@ public final class ResourceManager extends ComponentDefinition {
     private final Object _lock_task_id = new Object();
     private final Object _lock_responses = new Object();
     private final Object _lock_bacth_id = new Object();
-    private final boolean _gradient = true;
+    private final boolean _gradient = false;
 
     private List<Task> _idle_tasks = Collections.synchronizedList(new ArrayList());
     private List<Task> _non_idle_tasks = Collections.synchronizedList(new ArrayList());
@@ -107,7 +107,7 @@ public final class ResourceManager extends ComponentDefinition {
         subscribe(handleCyclonSample, cyclonSamplePort);
         subscribe(handleRequestResource, indexPort);
         subscribe(handleBatchRequest,indexPort);
-        subscribe(handleAvarageTime,indexPort);
+        subscribe(handlePrintAvarage,indexPort);
         subscribe(handleUpdateTimeout, timerPort);
         subscribe(handleTaskTimeOut, timerPort);
         subscribe(handlePongTimeOut, timerPort);
@@ -140,26 +140,24 @@ public final class ResourceManager extends ComponentDefinition {
 
         }
     };
-    
-    Handler<TerminateExperiment> handleAvarageTime = new Handler<TerminateExperiment>() {
+    Handler<PrintAvarage> handlePrintAvarage = new Handler<PrintAvarage>() {
         @Override
-        public void handle(TerminateExperiment event) {
-            
-            ArrayList<Long> results = new ArrayList<Long>();
-            for(FinishedTasks f : _finished_tasks)
+        public void handle(PrintAvarage event) {
+           
+            long _sum = 0, _avarage = 0;
+            if(!_finished_tasks.isEmpty())
             {
-                results.add(f.getTime_to_find_resources_for_this_task());
+                
+                for(FinishedTasks ft : _finished_tasks)
+                {
+                    _sum += ft.getTime_to_find_resources_for_this_task();
+                }
+                _avarage = _sum / _finished_tasks.size();
             }
-            long sum = 0;
-            for(Long l : results)
-            {
-                sum += l;
-            }
-            long avarage = sum / results.size();
             System.out.println(" ");
-            System.out.println("################################ AVARAGE FOR RM "+ self.getIp().getHostAddress()+" ##############################");
-            System.out.println("Avarage = " + avarage);
-            System.out.println("#################################################################################################################");
+            System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
+            System.out.println("ResourceManager " + self.getIp().getHostAddress() + " avaraged :"+ _avarage + " milliseconds in finding tasks");
+            System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
             System.out.println(" ");
 
         }

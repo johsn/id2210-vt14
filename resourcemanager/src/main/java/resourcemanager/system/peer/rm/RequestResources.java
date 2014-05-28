@@ -3,6 +3,9 @@ package resourcemanager.system.peer.rm;
 import se.sics.kompics.Event;
 import se.sics.kompics.address.Address;
 import se.sics.kompics.network.Message;
+import se.sics.kompics.timer.SchedulePeriodicTimeout;
+import se.sics.kompics.timer.ScheduleTimeout;
+import se.sics.kompics.timer.Timeout;
 
 /**
  * User: jdowling
@@ -267,7 +270,7 @@ public class RequestResources  {
         
     }
 
-    static class ResourceFound extends Message {
+    public static class ResourceFound extends Message {
 
         private final long _time_found_resource;
         private final int _id;

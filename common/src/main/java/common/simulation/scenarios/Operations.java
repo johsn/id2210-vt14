@@ -36,6 +36,13 @@ public class Operations {
             return new TerminateExperiment();
         }
     };
+    
+    public static Operation<KillExperiment> kill = new Operation<KillExperiment>() {
+        @Override
+        public KillExperiment generate() {
+            return new KillExperiment();
+        }
+    };
 
     public static Operation4<RequestResource, Long, Long, Long, Long> requestResources() {
         return new Operation4<RequestResource, Long, Long, Long, Long>() {

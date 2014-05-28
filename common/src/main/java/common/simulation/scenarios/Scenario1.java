@@ -47,11 +47,17 @@ public class Scenario1 extends Scenario {
 			eventInterArrivalTime(constant(100));
 			raise(1, Operations.terminate);
 		}};
+                
+                StochasticProcess killExperiment = new StochasticProcess() {{
+			eventInterArrivalTime(constant(100));
+			raise(1, Operations.kill);
+		}};
 		process0.start();
 		_regular_request.startAfterTerminationOf(2000, process0);
                 //_batch_request.startAfterTerminationOf(2000, process0);
                 //failPeersProcess.startAfterStartOf(30000, process0);
                 terminateProcess.startAfterTerminationOf(100*1000, _regular_request);
+                killExperiment.startAfterTerminationOf(1000, terminateProcess);
                 //terminateProcess.startAfterTerminationOf(100*1000, _batch_request);
 	}};
 
