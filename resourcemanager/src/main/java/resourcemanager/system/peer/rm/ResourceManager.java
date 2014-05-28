@@ -24,6 +24,7 @@ import se.sics.kompics.Negative;
 import se.sics.kompics.Positive;
 import se.sics.kompics.address.Address;
 import se.sics.kompics.network.Network;
+import se.sics.kompics.p2p.experiment.dsl.events.TerminateExperiment;
 import se.sics.kompics.timer.SchedulePeriodicTimeout;
 import se.sics.kompics.timer.ScheduleTimeout;
 import se.sics.kompics.timer.Timer;
@@ -71,6 +72,7 @@ public final class ResourceManager extends ComponentDefinition {
 
     private List<Task> _tasks_runnning_on_this_machine = Collections.synchronizedList(new ArrayList());
     private List<Task> _queue_for_this_machine = Collections.synchronizedList(new ArrayList());
+    private ArrayList<FinishedTasks> _finished_tasks = new ArrayList<FinishedTasks>();
 
     private int getCurrentTaskId() {
         synchronized (_lock_task_id) {
@@ -105,6 +107,7 @@ public final class ResourceManager extends ComponentDefinition {
         subscribe(handleCyclonSample, cyclonSamplePort);
         subscribe(handleRequestResource, indexPort);
         subscribe(handleBatchRequest,indexPort);
+        subscribe(handleAvarageTime,indexPort);
         subscribe(handleUpdateTimeout, timerPort);
         subscribe(handleTaskTimeOut, timerPort);
         subscribe(handlePongTimeOut, timerPort);
@@ -116,6 +119,7 @@ public final class ResourceManager extends ComponentDefinition {
         subscribe(handleConfirm, networkPort);
         subscribe(handleExpectedResponses,networkPort);
         subscribe(handleBestPeerRequest,networkPort);
+        subscribe(handleResourceFound,networkPort);
         subscribe(handleTManSampleCpu, tmanPort);
         subscribe(handleTManSampleMem, tmanPort);
     }
@@ -133,6 +137,58 @@ public final class ResourceManager extends ComponentDefinition {
             SchedulePeriodicTimeout rst = new SchedulePeriodicTimeout(period, period);
             rst.setTimeoutEvent(new UpdateTimeout(rst));
             trigger(rst, timerPort);
+
+        }
+    };
+    
+    Handler<TerminateExperiment> handleAvarageTime = new Handler<TerminateExperiment>() {
+        @Override
+        public void handle(TerminateExperiment event) {
+            
+            ArrayList<Long> results = new ArrayList<Long>();
+            for(FinishedTasks f : _finished_tasks)
+            {
+                results.add(f.getTime_to_find_resources_for_this_task());
+            }
+            long sum = 0;
+            for(Long l : results)
+            {
+                sum += l;
+            }
+            long avarage = sum / results.size();
+            System.out.println(" ");
+            System.out.println("################################ AVARAGE FOR RM "+ self.getIp().getHostAddress()+" ##############################");
+            System.out.println("Avarage = " + avarage);
+            System.out.println("#################################################################################################################");
+            System.out.println(" ");
+
+        }
+    };
+    
+    Handler<RequestResources.ResourceFound> handleResourceFound = new Handler<RequestResources.ResourceFound>() {
+        @Override
+        public void handle(RequestResources.ResourceFound event) {
+           
+            boolean check = false;
+            synchronized(_non_idle_tasks)
+            {
+                Iterator i = _non_idle_tasks.iterator();
+                while(i.hasNext())
+                {
+                    Task t = (Task)i.next();
+                    if(t.getId() == event.getId())
+                    {
+                        long time = event.getTime_found_resource() - t.getStart_time();
+                        t.setTime_to_find_resource(time);
+                        check = true;
+                        break;
+                    }
+                }
+                if(!check)
+                {
+                    System.out.println("Weird");
+                }
+            }
 
         }
     };
@@ -165,6 +221,7 @@ public final class ResourceManager extends ComponentDefinition {
 
             int _scheduler_task_id = event.getId();
             Address _scheduler = event.getSource();
+            boolean queued = false;
 
             Task _task_to_look_for = null;
 
@@ -174,6 +231,7 @@ public final class ResourceManager extends ComponentDefinition {
                     Task t = (Task) i.next();
                     if (t.getId() == _scheduler_task_id && t.getScheduler().equals(_scheduler)) {
                         _task_to_look_for = t;
+                        queued = false;
                         break;
                     }
                 }
@@ -189,6 +247,7 @@ public final class ResourceManager extends ComponentDefinition {
                         if(t.getId() == _scheduler_task_id && t.getScheduler().equals(_scheduler))
                         {
                             _task_to_look_for = t;
+                            queued = true;
                             break;
                         }
                     }
@@ -197,6 +256,10 @@ public final class ResourceManager extends ComponentDefinition {
 
             if (_task_to_look_for != null) {
                 RequestResources.Pong p = new RequestResources.Pong(self, _task_to_look_for.getScheduler(), true, _task_to_look_for.getId());
+                if(queued)
+                {
+                    p.setQueued(true);
+                }
                 trigger(p, networkPort);
             } else {
                 RequestResources.Pong p = new RequestResources.Pong(self, _scheduler, false, _scheduler_task_id);
@@ -223,6 +286,10 @@ public final class ResourceManager extends ComponentDefinition {
                     if (t.getId() == _task_id) {
                         t.setPonged(true);
                         t.setRunning(_running);
+                        if(event.isQueued())
+                        {
+                            t.setQueued(true);
+                        }
                         break;
                     }
                 }
@@ -245,9 +312,12 @@ public final class ResourceManager extends ComponentDefinition {
                 if (availableResources.isAvailable(_task_to_run.getCpus(), _task_to_run.getMemory())) {
                     _tasks_runnning_on_this_machine.add(_task_to_run);
                     availableResources.allocate(_task_to_run.getCpus(), _task_to_run.getMemory());
+                    trigger(new RequestResources.Pong(self, _task_to_run.getScheduler(), true, _task_to_run.getId()),networkPort);
+                    trigger(new RequestResources.ResourceFound(self, _task_to_run.getScheduler(), _task_to_run.getId(), System.currentTimeMillis()),networkPort);
                     StartTimerForTaskToFinish(_task_to_run.getTask_time(), _task_to_run.getId(), _task_to_run.getScheduler());
                 } else {
                     _queue_for_this_machine.add(_task_to_run);
+                    trigger(new RequestResources.Pong(self, _task_to_run.getScheduler(), true, _task_to_run.getId()),networkPort);
                 }
         }
 
@@ -282,6 +352,7 @@ public final class ResourceManager extends ComponentDefinition {
                     Task t = (Task) i.next();
                     if (t.getId() == _scheduler_task_id && t.getScheduler().equals(_scheduler)) {
                         _task_to_stop = t;
+                        break;
                     }
                 }
             }
@@ -297,8 +368,9 @@ public final class ResourceManager extends ComponentDefinition {
                 if (_queue_for_this_machine.size() > 0) {
                     Task _task_top_of_queue = _queue_for_this_machine.get(0);
                     boolean _success = availableResources.isAvailable(_task_top_of_queue.getCpus(), _task_top_of_queue.getMemory());
-
+                    
                     if (_success) {
+                        trigger(new RequestResources.ResourceFound(self, _task_top_of_queue.getScheduler(), _task_top_of_queue.getId(), System.currentTimeMillis()),networkPort);
                         _tasks_runnning_on_this_machine.add(_task_top_of_queue);
                         _queue_for_this_machine.remove(_task_top_of_queue);
                         availableResources.allocate(_task_top_of_queue.getCpus(), _task_top_of_queue.getMemory());
@@ -342,6 +414,7 @@ public final class ResourceManager extends ComponentDefinition {
                                 break;
                             } else {
                                 _non_idle_tasks.remove(t);
+                                _finished_tasks.add(new FinishedTasks(t.getId(),t.getTime_to_find_resource(),t.getCpus(),t.getMemory(),self,t.getPotentialExecutor()));
                                 break;
                             }
                         } else {
@@ -545,11 +618,10 @@ public final class ResourceManager extends ComponentDefinition {
             if (event.isSuccess()  && _task_in_question != null) {
                 _idle_tasks.remove(_task_in_question);
                 _task_in_question.setPotentialExecutor(event.getSource());
+                _task_in_question.setRunning(true);
                 _non_idle_tasks.add(_task_in_question);
-                RequestResources.Confirm c = new RequestResources.Confirm(self, event.getSource(), _task_in_question.getCpus(), _task_in_question.getMemory(), _task_in_question.getTask_time(), _task_in_question.getId());
+                RequestResources.Confirm c = new RequestResources.Confirm(self, _task_in_question.getPotentialExecutor(), _task_in_question.getCpus(), _task_in_question.getMemory(), _task_in_question.getTask_time(), _task_in_question.getId());
                 trigger(c, networkPort);
-                RequestResources.Ping p = new RequestResources.Ping(self, event.getSource(), _task_in_question.getId());
-                trigger(p, networkPort);
                 StartTimerForPongResponse(MAX_RESPONSE_TIMEOUT, _task_in_question.getId());
             } else if (!event.isSuccess() && _task_in_question != null) {
                 synchronized (_lock_responses) {
@@ -561,12 +633,11 @@ public final class ResourceManager extends ComponentDefinition {
                             _task_in_question.setShorest_queue_peer(event.getSource());
                         }
                             _idle_tasks.remove(_task_in_question);
-                            _task_in_question.setPotentialExecutor(event.getSource());
+                            _task_in_question.setPotentialExecutor(_task_in_question.getShorest_queue_peer());
+                            _task_in_question.setRunning(true);
                             _non_idle_tasks.add(_task_in_question);
-                            RequestResources.Confirm c = new RequestResources.Confirm(self, _task_in_question.getShorest_queue_peer(), _task_in_question.getCpus(), _task_in_question.getMemory(), _task_in_question.getTask_time(), _task_in_question.getId());
+                            RequestResources.Confirm c = new RequestResources.Confirm(self, _task_in_question.getPotentialExecutor(), _task_in_question.getCpus(), _task_in_question.getMemory(), _task_in_question.getTask_time(), _task_in_question.getId());
                             trigger(c, networkPort);
-                            RequestResources.Ping p = new RequestResources.Ping(self, _task_in_question.getShorest_queue_peer(), _task_in_question.getId());
-                            trigger(p, networkPort);
                             StartTimerForPongResponse(MAX_RESPONSE_TIMEOUT, _task_in_question.getId());
                         
                     } else {
@@ -686,6 +757,7 @@ public final class ResourceManager extends ComponentDefinition {
                             Iterator i = _idle_tasks.iterator();
                             while (i.hasNext()) {
                                 Task t = (Task) i.next();
+                                t.setStart_time(System.currentTimeMillis());
                                 t.setExpected_responses(_peers_to_probe.size());
                                 RequestResources.Request r = new RequestResources.Request(self, peer, t.getCpus(), t.getMemory(), t.getId());
                                 if(t.isBatch_task())
@@ -720,6 +792,7 @@ public final class ResourceManager extends ComponentDefinition {
                                 s.setBatch_task(true);
                                 s.setBatch_id(task.getBatch_id());
                             }
+                            task.setStart_time(System.currentTimeMillis());
                             s.setScheduler(self);
                             trigger(s,networkPort);
                         }
@@ -740,6 +813,7 @@ public final class ResourceManager extends ComponentDefinition {
                                 s.setBatch_task(true);
                                 s.setBatch_id(task.getBatch_id());
                             }
+                            task.setStart_time(System.currentTimeMillis());
                             s.setScheduler(self);
                             trigger(s,networkPort);
                         }

@@ -33,6 +33,8 @@ import common.simulation.PeerJoin;
 import common.simulation.RequestResource;
 import common.simulation.SimulatorInit;
 import java.net.InetAddress;
+import java.util.Iterator;
+import java.util.Map;
 import java.util.Random;
 import se.sics.ipasdistances.AsIpGenerator;
 import system.peer.RmPort;
@@ -145,6 +147,13 @@ public final class DataCenterSimulator extends ComponentDefinition {
     Handler<TerminateExperiment> handleTerminateExperiment = new Handler<TerminateExperiment>() {
         @Override
         public void handle(TerminateExperiment event) {
+            Iterator i = peers.entrySet().iterator();
+            while(i.hasNext())
+            {
+                Map.Entry pairs = (Map.Entry)i.next();
+                Component peer = (Component) pairs.getValue();
+                trigger(event, peer.getNegative(RmPort.class));
+            }
             System.err.println("Finishing experiment - terminating....");
             System.exit(0);
         }

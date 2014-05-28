@@ -28,11 +28,19 @@ class Task
     private boolean _running;
     private  boolean _batch_task;
     private int batch_id;
+    private boolean _queued;
 
     
     private long _time_to_find_resource;
     private long _start_time;
-    private long _endtime;
+
+    public boolean isQueued() {
+        return _queued;
+    }
+
+    public void setQueued(boolean _queued) {
+        this._queued = _queued;
+    }
 
     public long getTime_to_find_resource() {
         return _time_to_find_resource;
@@ -48,14 +56,6 @@ class Task
 
     public void setStart_time(long _start_time) {
         this._start_time = _start_time;
-    }
-
-    public long getEndtime() {
-        return _endtime;
-    }
-
-    public void setEndtime(long _endtime) {
-        this._endtime = _endtime;
     }
     
     public int getBatch_id() {

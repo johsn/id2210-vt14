@@ -1,5 +1,6 @@
 package resourcemanager.system.peer.rm;
 
+import se.sics.kompics.Event;
 import se.sics.kompics.address.Address;
 import se.sics.kompics.network.Message;
 
@@ -60,11 +61,20 @@ public class RequestResources  {
         private final int _queue_size;
         private boolean _batch_task;
         private int _batch_id;
+        private long _resources_found_time;
         public Response(Address source, Address destination, boolean success,int _id,int _queue_size) {
             super(source, destination);
             this.success = success;
             this._id=_id;
             this._queue_size=_queue_size;
+        }
+
+        public long getResources_found_time() {
+            return _resources_found_time;
+        }
+
+        public void setResources_found_time(long _resources_found_time) {
+            this._resources_found_time = _resources_found_time;
         }
 
         public boolean isBatch_task() {
@@ -146,12 +156,21 @@ public class RequestResources  {
         
         private final int _id;
         private final boolean _running;
+        private boolean _queued;
         
         public Pong(Address source,Address destination,boolean _running,int _id)
         {
             super(source,destination);
             this._id=_id;
             this._running=_running;
+        }
+
+        public boolean isQueued() {
+            return _queued;
+        }
+
+        public void setQueued(boolean _queued) {
+            this._queued = _queued;
         }
 
         public boolean isRunning() {
@@ -244,6 +263,26 @@ public class RequestResources  {
 
         public int getExpected_responses() {
             return _expected_responses;
+        }
+        
+    }
+
+    static class ResourceFound extends Message {
+
+        private final long _time_found_resource;
+        private final int _id;
+        public ResourceFound(Address src, Address dest,int id, long time) {
+            super(src,dest);
+            this._id = id;
+            this._time_found_resource = time;
+        }
+
+        public long getTime_found_resource() {
+            return _time_found_resource;
+        }
+
+        public int getId() {
+            return _id;
         }
         
     }
