@@ -12,7 +12,7 @@ import se.sics.kompics.address.Address;
  *
  * @author johsn
  */
-class Task
+class TaskInformation
 {
     private final int _id;
     private final int _cpus;
@@ -151,7 +151,7 @@ class Task
         return _scheduler;
     }
 
-    public Task(int _id, int _cpus, int _memory,int _task_time,Address _requestor) {
+    public TaskInformation(int _id, int _cpus, int _memory,int _task_time,Address _requestor) {
         this._id = _id;
         this._cpus = _cpus;
         this._memory = _memory;

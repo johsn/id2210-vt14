@@ -67,13 +67,14 @@ public final class ResourceManager extends ComponentDefinition {
     private final Object _lock_bacth_id = new Object();
     private final boolean _gradient = true;
 
-    private List<Task> _idle_tasks = Collections.synchronizedList(new ArrayList());
-    private List<Task> _non_idle_tasks = Collections.synchronizedList(new ArrayList());
+    private List<TaskInformation> _idle_tasks = Collections.synchronizedList(new ArrayList());
+    private List<TaskInformation> _non_idle_tasks = Collections.synchronizedList(new ArrayList());
 
-    private List<Task> _tasks_runnning_on_this_machine = Collections.synchronizedList(new ArrayList());
-    private List<Task> _queue_for_this_machine = Collections.synchronizedList(new ArrayList());
+    private List<TaskInformation> _tasks_runnning_on_this_machine = Collections.synchronizedList(new ArrayList());
+    private List<TaskInformation> _queue_for_this_machine = Collections.synchronizedList(new ArrayList());
     private ArrayList<FinishedTasks> _finished_tasks = new ArrayList<FinishedTasks>();
 
+    // simply gets a new taskid
     private int getCurrentTaskId() {
         synchronized (_lock_task_id) {
             int tmp = this._current_task_id;
@@ -82,6 +83,7 @@ public final class ResourceManager extends ComponentDefinition {
         }
     }
     
+    //Simply gets a new batchid
     private int getCurrentBatchId() {
             synchronized(_lock_bacth_id)
                     {
@@ -140,6 +142,7 @@ public final class ResourceManager extends ComponentDefinition {
 
         }
     };
+    //Prints the avarage of finding some resource, only prints for Resource Managers that have had enough tests (n>30)
     Handler<PrintAvarage> handlePrintAvarage = new Handler<PrintAvarage>() {
         @Override
         public void handle(PrintAvarage event) {
@@ -162,6 +165,9 @@ public final class ResourceManager extends ComponentDefinition {
         }
     };
     
+    // Takes an event that a Executor has generated. 
+    // The executor generated this event when it found resources for a particular task. 
+    // This method sets the time for finding the resource for a certain task id.
     Handler<RequestResources.ResourceFound> handleResourceFound = new Handler<RequestResources.ResourceFound>() {
         @Override
         public void handle(RequestResources.ResourceFound event) {
@@ -171,7 +177,7 @@ public final class ResourceManager extends ComponentDefinition {
                 Iterator i = _non_idle_tasks.iterator();
                 while(i.hasNext())
                 {
-                    Task t = (Task)i.next();
+                    TaskInformation t = (TaskInformation)i.next();
                     if(t.getId() == event.getId())
                     {
                         long time = event.getTime_found_resource() - t.getStart_time();
@@ -184,6 +190,9 @@ public final class ResourceManager extends ComponentDefinition {
         }
     };
     
+    // Sets the expected responses for a certain task. 
+    // This handler is used gradient when the best peer has neighbors but cannot handle the task it self. 
+    // It must probe its neighbors and in order to wait for responses it needs to know how many respones(neighbors) it should wait for before determening the best one.
     Handler<RequestResources.SetExpectedResponses> handleExpectedResponses = new Handler<RequestResources.SetExpectedResponses>() {
         @Override
         public void handle(RequestResources.SetExpectedResponses event) {
@@ -193,7 +202,7 @@ public final class ResourceManager extends ComponentDefinition {
                 Iterator i = _idle_tasks.iterator();
                 while(i.hasNext())
                 {
-                    Task t = (Task)i.next();
+                    TaskInformation t = (TaskInformation)i.next();
                     if(t.getId() == event.getId())
                     {
                         t.setExpected_responses(event.getExpected_responses());
@@ -204,7 +213,10 @@ public final class ResourceManager extends ComponentDefinition {
 
         }
     };
-    
+    // Handles a ping from a scheduler. Checks to see if the taskid and Address combination is in either the queue or the list of running tasks.
+    // If it is found in either of the lists, it is considered running and a pong is created and sent as a response.
+    // If it is not found it is considered done and a pong is created as a response.
+    // The queued variable is just there for debugging purposes.
     Handler<RequestResources.Ping> handlePing = new Handler<RequestResources.Ping>() {
         @Override
         @SuppressWarnings("SynchronizeOnNonFinalField")
@@ -214,12 +226,12 @@ public final class ResourceManager extends ComponentDefinition {
             Address _scheduler = event.getSource();
             boolean queued = false;
 
-            Task _task_to_look_for = null;
+            TaskInformation _task_to_look_for = null;
 
             synchronized (_tasks_runnning_on_this_machine) {
                 Iterator i = _tasks_runnning_on_this_machine.iterator();
                 while (i.hasNext()) {
-                    Task t = (Task) i.next();
+                    TaskInformation t = (TaskInformation) i.next();
                     if (t.getId() == _scheduler_task_id && t.getScheduler().equals(_scheduler)) {
                         _task_to_look_for = t;
                         queued = false;
@@ -234,7 +246,7 @@ public final class ResourceManager extends ComponentDefinition {
                 {
                     Iterator i = _queue_for_this_machine.iterator();
                     while(i.hasNext()){
-                        Task t = (Task)i.next();
+                        TaskInformation t = (TaskInformation)i.next();
                         if(t.getId() == _scheduler_task_id && t.getScheduler().equals(_scheduler))
                         {
                             _task_to_look_for = t;
@@ -261,7 +273,10 @@ public final class ResourceManager extends ComponentDefinition {
 
    
     };
-
+    
+    // Handles a pong event from a executor.
+    // Evaluates the event and sets the task indicated by the id to the values indicated by the event.
+    // Again, the queue variable is only there for debugging purposes.
     Handler<RequestResources.Pong> handlePong = new Handler<RequestResources.Pong>() {
         @Override
         @SuppressWarnings("SynchronizeOnNonFinalField")
@@ -273,7 +288,7 @@ public final class ResourceManager extends ComponentDefinition {
             synchronized (_non_idle_tasks) {
                 Iterator i = _non_idle_tasks.iterator();
                 while (i.hasNext()) {
-                    Task t = (Task) i.next();
+                    TaskInformation t = (TaskInformation) i.next();
                     if (t.getId() == _task_id) {
                         t.setPonged(true);
                         t.setRunning(_running);
@@ -288,6 +303,11 @@ public final class ResourceManager extends ComponentDefinition {
         }
 
     };
+    
+    // Handles a confirm from a scheduler. This event indicates that the scheduler wants to place a task here.
+    // The handler evaluates if the task indicated by the event can run right now or if it needs to be queued.
+    // If it can run right away then a RequestFound event is generated as the task finally find resources.
+    // Wether or not the task has to be queued a pong is generated indicating that the task is infact running and that the peer is alive.
     Handler<RequestResources.Confirm> handleConfirm = new Handler<RequestResources.Confirm>() {
         @Override
         public void handle(RequestResources.Confirm event) {
@@ -297,7 +317,7 @@ public final class ResourceManager extends ComponentDefinition {
             int _task_time = event.getTask_time();
             int _schedulers_task_id = event.getId();
 
-                Task _task_to_run = new Task(_schedulers_task_id, _cpu_to_allocate, _mem_to_allocate, _task_time, event.getSource());
+                TaskInformation _task_to_run = new TaskInformation(_schedulers_task_id, _cpu_to_allocate, _mem_to_allocate, _task_time, event.getSource());
                 _task_to_run.setPotentialExecutor(self);
 
                 if (availableResources.isAvailable(_task_to_run.getCpus(), _task_to_run.getMemory())) {
@@ -328,6 +348,10 @@ public final class ResourceManager extends ComponentDefinition {
         }
     };
     
+    // Handles tasktimeouts i.e it triggers when a task is done running.
+    // The handler uses the event variables to identify what task that should be removed from the running list aswell as released.
+    // It then checks to see if there is a task in the queue that could be run.
+    // If the top task of the queue can run, it is allocated and a ResourceFound event is triggered to the scheduler of the task. This indicates that the task found its resources.
     Handler<TaskTimeOut> handleTaskTimeOut = new Handler<TaskTimeOut>() {
         @Override
         @SuppressWarnings("SynchronizeOnNonFinalField")
@@ -335,12 +359,12 @@ public final class ResourceManager extends ComponentDefinition {
 
             Address _scheduler = event.getScheduler();
             int _scheduler_task_id = event.getScheduler_task_id();
-            Task _task_to_stop = null;
+            TaskInformation _task_to_stop = null;
 
             synchronized (_tasks_runnning_on_this_machine) {
                 Iterator i = _tasks_runnning_on_this_machine.iterator();
                 while (i.hasNext()) {
-                    Task t = (Task) i.next();
+                    TaskInformation t = (TaskInformation) i.next();
                     if (t.getId() == _scheduler_task_id && t.getScheduler().equals(_scheduler)) {
                         _task_to_stop = t;
                         break;
@@ -357,7 +381,7 @@ public final class ResourceManager extends ComponentDefinition {
                             System.out.println(" ");
 
                 if (_queue_for_this_machine.size() > 0) {
-                    Task _task_top_of_queue = _queue_for_this_machine.get(0);
+                    TaskInformation _task_top_of_queue = _queue_for_this_machine.get(0);
                     boolean _success = availableResources.isAvailable(_task_top_of_queue.getCpus(), _task_top_of_queue.getMemory());
                     
                     if (_success) {
@@ -375,6 +399,7 @@ public final class ResourceManager extends ComponentDefinition {
         }
     };
 
+    //This handler simply creates a empty request-resources event and runs it. It is used when there are 0 peers to probe / search for, i.e the task created is not scheduled.
     Handler<RequestTimeout> handleRequestTimeOut = new Handler<RequestTimeout>() {
         @Override
         @SuppressWarnings("SynchronizeOnNonFinalField")
@@ -384,6 +409,10 @@ public final class ResourceManager extends ComponentDefinition {
         }
     };
 
+    // Handles pong timeouts. This timeout checks to see if the task indicated by the event has been ponged, i.e that the peer running it is alive.
+    // It also checks if the task is still running. If it is ponged and running a new ping is triggered to the executor. If it is ponged and not running it is considered finished and added to the _finished_list.
+    // If the task is not ponged, the executor is considered dead and the task is put in the list represting non scheduled tasks so that it can be scheduled in the future.
+    // Also an empty reqest-resources-event is triggerd because there might not be any request-event to run the "dead task".
     Handler<PongTimeOut> handlePongTimeOut = new Handler<PongTimeOut>() {
         @Override
         @SuppressWarnings("SynchronizeOnNonFinalField")
@@ -394,7 +423,7 @@ public final class ResourceManager extends ComponentDefinition {
             synchronized (_non_idle_tasks) {
                 Iterator i = _non_idle_tasks.iterator();
                 while (i.hasNext()) {
-                    Task t = (Task) i.next();
+                    TaskInformation t = (TaskInformation) i.next();
                     if (t.getId() == _task_id) {
                         if (t.isPonged()) {
                             if (t.isRunning()) {
@@ -429,6 +458,8 @@ public final class ResourceManager extends ComponentDefinition {
         }
     };
 
+    // This handler handles requests from schedulers. It answers with a response indicating if the task could be run on this machine of not.
+    // It also repsonds with its queues size to help the scheduler perform sparrow.
     Handler<RequestResources.Request> handleResourceAllocationRequest = new Handler<RequestResources.Request>() {
         @Override
         public void handle(RequestResources.Request event) {
@@ -446,6 +477,12 @@ public final class ResourceManager extends ComponentDefinition {
                 trigger(r, networkPort);
         }
     };
+    
+    // This handler uses the tman sample to find the best peer for the type of request it is cpu/memory.
+    // It keeps creating new FindBestPeerToRunTask events as long as the best peer in its sample has better resources available for the type.
+    // When it eventully finds the best peer it checks if it can run the task. If it can a simple response is sent to the original scheduler.
+    // If the best peer cannot handle the task, it sets requested responses and performs sparrow on its neighors, using the orignal scheduler as source.
+    // If there are zero available neighbors then it responds to the original scheduler that it can be scheduled on itself, which will results in a queued task.
     
     Handler<RequestResources.FindBestPeerToRunTask> handleBestPeerRequest = new Handler<RequestResources.FindBestPeerToRunTask>() {
         @Override
@@ -565,16 +602,22 @@ public final class ResourceManager extends ComponentDefinition {
             }
         }
     };
+    // Handles respons events. Finds the task indicated by the id and evaluates its success.
+    // If the task was request was succesful then a confirm is sent to the request-source. Also a hearbeating mechanism starts, i.e a ping is triggered.
+    // If the request was not successful then the handler checks to see how many requests it has recieved. If this is the last request it sends the confirm to the 
+    // best peer, i.e the shortest queue peer. If this is not the last peer it updates shortest queue information and shortest queue peer.
+    // If the task is a batch task then handler cheks to see that the batchid has not already been scheduled on the response event-source.
+    // This way a batch task can only schedule its tasks on unique machines.
     Handler<RequestResources.Response> handleResourceAllocationResponse = new Handler<RequestResources.Response>() {
         @Override
         @SuppressWarnings("SynchronizeOnNonFinalField")
         public void handle(RequestResources.Response event) {
 
-            Task _task_in_question = null;
+            TaskInformation _task_in_question = null;
             synchronized (_idle_tasks) {
                 Iterator i = _idle_tasks.iterator();
                 while (i.hasNext()) {
-                    Task t = (Task) i.next();
+                    TaskInformation t = (TaskInformation) i.next();
                     if(t.isBatch_task())
                     {
                         synchronized(_non_idle_tasks)
@@ -582,7 +625,7 @@ public final class ResourceManager extends ComponentDefinition {
                             Iterator j = _non_idle_tasks.iterator();
                             while(j.hasNext())
                             {
-                                Task te = (Task)j.next();
+                                TaskInformation te = (TaskInformation)j.next();
                                 if(te.isBatch_task() && te.getBatch_id() == t.getBatch_id() && te.getPotentialExecutor().equals(event.getSource()))
                                 {
                                     //Already scheduled a task from this batch on that machine
@@ -680,6 +723,10 @@ public final class ResourceManager extends ComponentDefinition {
         }
     };
 
+    // Handles request-resource events. Creates a TaskInformation from the event variables and puts it into _idle_tasks which is a list that represents unscheduled tasks.
+    // Then it depends on wether _gradient is true or false. If false then cyclonsample is used and PROBES decides how many peers are requested.
+    // If _gradient is true, then a search for the best possible peer is started.
+    // If there are no samples in either tman or cyclon, then a requesttimeout is generated.
     Handler<RequestResource> handleRequestResource = new Handler<RequestResource>() {
         @Override
         @SuppressWarnings("SynchronizeOnNonFinalField")
@@ -701,7 +748,7 @@ public final class ResourceManager extends ComponentDefinition {
                 System.out.println("#################################################################################################################################################");
                 System.out.println(" ");
             }
-            Task _task = null;
+            TaskInformation _task = null;
             int _cpu;
             int _mem;
             int _task_id;
@@ -715,13 +762,13 @@ public final class ResourceManager extends ComponentDefinition {
                 
                 if(event.isBatch_task())
                 {
-                    _task = new Task(_task_id, _cpu, _mem, _task_time, self);
+                    _task = new TaskInformation(_task_id, _cpu, _mem, _task_time, self);
                     _task.setBatch_task(true);
                     _task.setBatch_id(event.getBatch_id());
                 }
                 else
                 {
-                    _task = new Task(_task_id, _cpu, _mem, _task_time, self);
+                    _task = new TaskInformation(_task_id, _cpu, _mem, _task_time, self);
                     _task.setBatch_task(false);
                 }
                 if(!_idle_tasks.contains(_task))
@@ -747,7 +794,7 @@ public final class ResourceManager extends ComponentDefinition {
                         synchronized (_idle_tasks) {
                             Iterator i = _idle_tasks.iterator();
                             while (i.hasNext()) {
-                                Task t = (Task) i.next();
+                                TaskInformation t = (TaskInformation) i.next();
                                 t.setStart_time(System.currentTimeMillis());
                                 t.setExpected_responses(_peers_to_probe.size());
                                 RequestResources.Request r = new RequestResources.Request(self, peer, t.getCpus(), t.getMemory(), t.getId());
@@ -770,7 +817,7 @@ public final class ResourceManager extends ComponentDefinition {
             }
             else
             {
-               for(Task task : _idle_tasks)
+               for(TaskInformation task : _idle_tasks)
                {
                     String _type = DetermineTopology(task.getCpus(),task.getMemory());
                     if(_type.equals("cpu"))
@@ -820,6 +867,9 @@ public final class ResourceManager extends ComponentDefinition {
         }
     };
     
+    // Handles batch-requests.
+    // Creates a request-resource-event and gives it a batch-id aswell as a boolean indicating that its a batch-task.
+    // Each task in the batch-request is givien the same batch-id so that these tasks must be scheduled on unique machines.
     Handler<BatchRequest> handleBatchRequest = new Handler<BatchRequest>() {
         @Override
         @SuppressWarnings("SynchronizeOnNonFinalField")
@@ -847,6 +897,7 @@ public final class ResourceManager extends ComponentDefinition {
         }
     };
     
+    //Updates the cpu tman sample.
     Handler<TManSample.Cpu> handleTManSampleCpu = new Handler<TManSample.Cpu>() {
         @Override
         public void handle(TManSample.Cpu event) 
@@ -861,6 +912,7 @@ public final class ResourceManager extends ComponentDefinition {
         }
     };
     
+    // Updates the memory tman sample
     Handler<TManSample.Mem> handleTManSampleMem = new Handler<TManSample.Mem>() {
         @Override
         public void handle(TManSample.Mem event) 
@@ -875,6 +927,7 @@ public final class ResourceManager extends ComponentDefinition {
         }
     };
 
+    // Starts the timer for a pongtimeout
     private void StartTimerForPongResponse(int delay, int id) {
 
         ScheduleTimeout st = new ScheduleTimeout(delay);
@@ -883,7 +936,7 @@ public final class ResourceManager extends ComponentDefinition {
         trigger(st, timerPort);
 
     }
-
+    // Starts the timer for a tasktimeout
     private void StartTimerForTaskToFinish(int task_time, int scheduler_task_id, Address scheduler) {
 
         ScheduleTimeout st = new ScheduleTimeout(task_time);
@@ -892,6 +945,7 @@ public final class ResourceManager extends ComponentDefinition {
         trigger(st, timerPort);
     }
     
+    // Determines what tmansample the request-resource event should use to search for best peer
      private String DetermineTopology(int _cpu, int _mem)
      {
          double mem = _mem / 1000;
