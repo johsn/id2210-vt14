@@ -106,6 +106,7 @@ public final class TMan extends ComponentDefinition {
         }
     };
     
+    // posts new tmansample each TManPost event
     Handler<TManPost> handleTManPost = new Handler<TManPost>() {
         @Override
         public void handle(TManPost event) {
@@ -119,6 +120,9 @@ public final class TMan extends ComponentDefinition {
         }
     };
 
+    // Selects a peer to exchange descriptors with softmax default 1.0. 
+    // Creates a DescriptorBuffer to exchange with the selected peer.
+    // Start a request for exchange
     Handler<TManSchedule> handleRound = new Handler<TManSchedule>() {
         @Override
         public void handle(TManSchedule event) {
@@ -149,6 +153,7 @@ public final class TMan extends ComponentDefinition {
         }
     };
 
+    // Merges cyclonsample with cpu and memory views.
     Handler<CyclonSample> handleCyclonSample = new Handler<CyclonSample>() {
         @Override
         public void handle(CyclonSample event) {
@@ -158,7 +163,10 @@ public final class TMan extends ComponentDefinition {
         }
         
     };
-
+    // Handles a request to exchange descriptorbuffer
+    // Checks what type of request it is memory or cpu
+    // Creates a response using its own descriptorbuffer
+    // Then merges own view with recieved view and ranks it and selects the best peers for the final view.
     Handler<ExchangeMsg.Request> handleTManPartnersRequest = new Handler<ExchangeMsg.Request>() {
         @Override
         public void handle(ExchangeMsg.Request event) {
@@ -193,6 +201,8 @@ public final class TMan extends ComponentDefinition {
         
     };
 
+    // Handles descriporbuffer responses. 
+    // Depeding on the type merges the correct view with the respose view into a buffer. Selects the best peers from that buffer for the final view.
     Handler<ExchangeMsg.Response> handleTManPartnersResponse = new Handler<ExchangeMsg.Response>() {
         @Override
         public void handle(ExchangeMsg.Response event) {
@@ -212,6 +222,7 @@ public final class TMan extends ComponentDefinition {
         }
     };
     
+    // Merges lists
     private ArrayList<PeerDescriptor> merge(ArrayList<PeerDescriptor> _merge_with , List<PeerDescriptor> _to_merge)
     {
         ArrayList<PeerDescriptor> _merged = new ArrayList<PeerDescriptor>(_merge_with);
@@ -226,7 +237,7 @@ public final class TMan extends ComponentDefinition {
         return _merged;
         
     }
-    
+    // Rankes list of peerdescriptor depending on their type cpu/memory
      private ArrayList<PeerDescriptor> rank(ArrayList<PeerDescriptor> _to_rank,String type)
      {
          
@@ -237,6 +248,7 @@ public final class TMan extends ComponentDefinition {
          return _ranked;
         
      }
+        // Rankes entries the same way rank does and then selects a peer from that ranked list. Default selects best peer.
         public PeerDescriptor getSoftMaxPeerDescriptor(List<PeerDescriptor> entries,String type) {
         if(type.equals("cpu"))
         {    
@@ -270,7 +282,7 @@ public final class TMan extends ComponentDefinition {
         }
         return entries.get(entries.size() - 1);
     }
-        
+    //Make sure to keep view at constant size. If the vew is bigger than it should be, then remove worst peers.    
     private ArrayList<PeerDescriptor> selectView(ArrayList<PeerDescriptor> list) {
         
         if(list.size() > _view_size)
