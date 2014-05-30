@@ -6,6 +6,7 @@
 
 package resourcemanager.system.peer.rm;
 
+import java.util.ArrayList;
 import se.sics.kompics.address.Address;
 
 /**
@@ -29,10 +30,15 @@ class TaskInformation
     private  boolean _batch_task;
     private int batch_id;
     private boolean _queued;
+    private ArrayList<Address> _peers_to_probe = new ArrayList<Address>();
 
     
     private long _time_to_find_resource;
     private long _start_time;
+
+    public ArrayList<Address> getPeers_to_probe() {
+        return _peers_to_probe;
+    }
 
     public boolean isQueued() {
         return _queued;

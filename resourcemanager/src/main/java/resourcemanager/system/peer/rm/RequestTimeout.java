@@ -6,7 +6,6 @@
 
 package resourcemanager.system.peer.rm;
 
-import common.simulation.RequestResource;
 import se.sics.kompics.timer.ScheduleTimeout;
 import se.sics.kompics.timer.Timeout;
 

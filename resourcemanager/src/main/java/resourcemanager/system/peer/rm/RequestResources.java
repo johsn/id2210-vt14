@@ -1,5 +1,6 @@
 package resourcemanager.system.peer.rm;
 
+import java.util.ArrayList;
 import se.sics.kompics.Event;
 import se.sics.kompics.address.Address;
 import se.sics.kompics.network.Message;
@@ -114,12 +115,30 @@ public class RequestResources  {
         private final int _cpus;
         private final int _mem;
         private final int _task_time;
+        private boolean batch_task;
+        private int batch_id;
         public Confirm(Address source, Address destination,int _cpus,int _mem,int _task_time, int _id) {
             super(source, destination);
             this._id=_id;
             this._cpus=_cpus;
             this._mem=_mem;
             this._task_time=_task_time;
+        }
+
+        public boolean isBatch_task() {
+            return batch_task;
+        }
+
+        public void setBatch_task(boolean batch_task) {
+            this.batch_task = batch_task;
+        }
+
+        public int getBatch_id() {
+            return batch_id;
+        }
+
+        public void setBatch_id(int batch_id) {
+            this.batch_id = batch_id;
         }
         
         public int getTask_time() {
@@ -195,6 +214,7 @@ public class RequestResources  {
         private boolean _batch_task;
         private int _batch_id;
         private final String _type;
+        private ArrayList<Address> _dont_schedule_here = new ArrayList<Address>();
         
         
         public FindBestPeerToRunTask(Address source,Address destination, String type,int numCpus,int Mem,int id)
@@ -204,6 +224,10 @@ public class RequestResources  {
             this.amountMemInMb = Mem;
             this.id = id;
             this._type = type;
+        }
+
+        public ArrayList<Address> getDont_schedule_here() {
+            return _dont_schedule_here;
         }
 
         public Address getScheduler() {
@@ -286,6 +310,21 @@ public class RequestResources  {
 
         public int getId() {
             return _id;
+        }
+        
+    }
+    
+    public static class ThisBatchTaskIsNotrunningHereAnymore extends Message {
+        
+        private final int batch_id;
+        
+        public ThisBatchTaskIsNotrunningHereAnymore(Address src, Address dest,int batch_id) {
+            super(src,dest);
+            this.batch_id = batch_id;
+        }
+
+        public int getBatchId() {
+            return batch_id;
         }
         
     }

@@ -30,7 +30,7 @@ import common.simulation.ConsistentHashtable;
 import common.simulation.GenerateReport;
 import common.simulation.PeerFail;
 import common.simulation.PeerJoin;
-import common.simulation.PrintAvarage;
+import common.simulation.PrintAverage;
 import common.simulation.RequestResource;
 import common.simulation.SimulatorInit;
 import common.simulation.scenarios.KillExperiment;
@@ -163,7 +163,7 @@ public final class DataCenterSimulator extends ComponentDefinition {
             System.err.println("Getting results....");
             for(Component peer : _peers_that_requested)
             {        
-                trigger(new PrintAvarage(),peer.getNegative(RmPort.class));
+                trigger(new PrintAverage(),peer.getNegative(RmPort.class));
             }
             
         }

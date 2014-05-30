@@ -1,6 +1,8 @@
 package common.simulation;
 
+import java.util.ArrayList;
 import se.sics.kompics.Event;
+import se.sics.kompics.address.Address;
 
 public final class RequestResource extends Event {
     

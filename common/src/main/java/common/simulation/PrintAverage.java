@@ -12,9 +12,9 @@ import se.sics.kompics.Event;
  *
  * @author johsn
  */
-public class PrintAvarage extends Event
+public class PrintAverage extends Event
 {
-    public PrintAvarage()
+    public PrintAverage()
     {
         
     }
